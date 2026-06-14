@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
-import { listClassIndexesInDrive } from "@/lib/drive";
+import { listClassIndexesInDrive, readStudentGradingSummary } from "@/lib/drive";
 
 export const runtime = "nodejs";
 
@@ -26,7 +26,25 @@ export async function GET(req: Request) {
     }
 
     const classIndexes = await listClassIndexesInDrive(accessToken, assessmentFolderId);
-    return NextResponse.json(classIndexes);
+    const enriched = await Promise.all(
+      classIndexes.map(async (classIndex) => ({
+        ...classIndex,
+        students: await Promise.all(
+          classIndex.students.map(async (student) => {
+            const grading = await readStudentGradingSummary(accessToken, student.folderId);
+            const finalScore = grading.finalGrading?.totalScore;
+            return {
+              ...student,
+              status: grading.finalGrading ? "final-saved" : student.status,
+              totalScore: finalScore ?? student.totalScore,
+              aiGrading: grading.aiGrading,
+              finalGrading: grading.finalGrading,
+            };
+          }),
+        ),
+      })),
+    );
+    return NextResponse.json(enriched);
   } catch (err) {
     const message = err instanceof Error ? err.message : "반 목록 불러오기 실패";
     const status = message.includes("Google Drive 연결") ? 401 : 500;

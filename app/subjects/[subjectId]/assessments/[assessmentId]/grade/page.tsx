@@ -201,6 +201,22 @@ export default function GradePage({
         setFeedback("");
       }
       if (saved.finalGrading) {
+        setClassIndexes((currentClasses) =>
+          currentClasses.map((classIndex) => ({
+            ...classIndex,
+            students: classIndex.students.map((student) =>
+              student.folderId === folderId
+                ? {
+                    ...student,
+                    status: "final-saved" as const,
+                    totalScore: saved.finalGrading?.totalScore ?? student.totalScore,
+                    finalGrading: saved.finalGrading,
+                    aiGrading: saved.aiGrading,
+                  }
+                : student,
+            ),
+          })),
+        );
         setMessage("저장된 교사 최종 채점 결과를 불러왔습니다.");
       } else if (saved.aiGrading || confirmed) {
         setMessage("저장된 OCR/AI 채점 결과를 불러왔습니다.");
@@ -279,14 +295,6 @@ export default function GradePage({
     }
   }
 
-  function bringAiResult() {
-    if (!aiResult) return;
-    setScores(aiResult.scores);
-    setOverallReason(aiResult.overallReason);
-    setFeedback(aiResult.feedback);
-    setMessage("AI 채점 결과 전체를 편집창으로 가져왔습니다.");
-  }
-
   async function runAi() {
     setRunning(true);
     setError(null);
@@ -362,30 +370,6 @@ export default function GradePage({
     }
   }
 
-  async function makeOcrDraft() {
-    setError(null);
-    setMessage(null);
-    setSavingOcr(true);
-    const draft: OcrDraft = {
-      text: answerText,
-      maskedTokens: [],
-      visualElements,
-    };
-    setOcrDraft(draft);
-    try {
-      if (!selectedStudentFolderId) throw new Error("학생을 먼저 선택하세요.");
-      await saveStudentWorkToDrive({
-        studentFolderId: selectedStudentFolderId,
-        ocrDraft: draft,
-      });
-      setMessage("ocr-draft.json을 저장했습니다.");
-    } catch (err) {
-      setError(friendlyError(err, "OCR 초안 저장 실패"));
-    } finally {
-      setSavingOcr(false);
-    }
-  }
-
   async function runAiInterpretation() {
     setError(null);
     setMessage(null);
@@ -404,7 +388,7 @@ export default function GradePage({
         draft.visualElements.map((item) => item.kind),
       );
       if (gradingMode === "auto") setEffectiveGradingMode(nextRecommendedMode);
-      setMessage("AI가 원본 페이지를 해석해 ocr-draft.json을 저장했습니다. 내용을 확인한 뒤 확정 저장하세요.");
+      setMessage("AI가 원본 페이지를 해석했습니다. 내용을 확인한 뒤 답안을 저장하세요.");
     } catch (err) {
       setError(friendlyError(err, "AI OCR/해석 실패"));
     } finally {
@@ -425,11 +409,18 @@ export default function GradePage({
         confirmedByTeacher: true as const,
         confirmedAt: Date.now(),
       };
+      const draft = {
+        text: answerText,
+        maskedTokens: ocrDraft?.maskedTokens ?? [],
+        visualElements,
+      };
       await saveStudentWorkToDrive({
         studentFolderId: selectedStudentFolderId,
+        ocrDraft: draft,
         ocrConfirmed: confirmed,
       });
-      setMessage("ocr-confirmed.json을 저장했습니다.");
+      setOcrDraft(draft);
+      setMessage("교사가 확인한 답안을 저장했습니다.");
     } catch (err) {
       setError(friendlyError(err, "OCR 확정 저장 실패"));
     } finally {
@@ -468,6 +459,8 @@ export default function GradePage({
                 ...student,
                 status: "final-saved" as const,
                 totalScore: total,
+                aiGrading: aiResult,
+                finalGrading,
                 updatedAt: Date.now(),
               }
             : student,
@@ -503,7 +496,7 @@ export default function GradePage({
             ) : (
               students.map((student) => {
                 const selected = student.folderId === selectedStudentFolderId;
-                const completed = student.status === "final-saved";
+                const completed = student.status === "final-saved" || Boolean(student.finalGrading);
                 return (
                   <div
                     key={student.folderId}
@@ -590,7 +583,7 @@ export default function GradePage({
                         className="min-w-0 flex-1 truncate text-left text-sm text-slate-800"
                       >
                         {studentLabel(student)}
-                        {student.status === "final-saved" && (
+                        {(student.status === "final-saved" || student.finalGrading) && (
                           <span className="ml-2 rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">
                             완료
                           </span>
@@ -684,7 +677,7 @@ export default function GradePage({
               </div>
               {ocrDraft && (
                 <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-                  OCR 초안 있음
+                  답안 있음
                 </span>
               )}
             </div>
@@ -703,18 +696,11 @@ export default function GradePage({
                 {interpreting ? "AI 해석 중" : "AI OCR/해석 실행"}
               </button>
               <button
-                onClick={() => void makeOcrDraft()}
-                disabled={savingOcr || !selectedStudentFolderId}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                OCR 초안 저장
-              </button>
-              <button
                 onClick={() => void confirmOcr()}
                 disabled={savingOcr || !selectedStudentFolderId}
                 className="rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
               >
-                OCR/해석 확정 저장
+                확인한 답안 저장
               </button>
             </div>
           </div>
@@ -743,29 +729,17 @@ export default function GradePage({
               <div>
                 <h2 className="text-base font-semibold text-slate-900">AI 채점 초안</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  AI가 만든 점수, 근거, 피드백 전체를 교사 편집창으로 가져올 수 있습니다.
+                  AI 채점 결과는 아래 교사 최종 채점표에 바로 반영됩니다. 다시 채점하려면 AI 채점 실행을 한 번 더 누르세요.
                 </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void runAi()}
-                  disabled={running}
-                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {running ? "채점 중" : "AI 채점 실행"}
-                </button>
-                <button
-                  onClick={bringAiResult}
-                  disabled={!aiResult}
-                  className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-                >
-                  AI 결과 다시 반영
-                </button>
-              </div>
+              <button
+                onClick={() => void runAi()}
+                disabled={running}
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {running ? "채점 중" : "AI 채점 실행"}
+              </button>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              AI 채점 결과는 채점표에 자동으로 들어갑니다. 수정하다가 AI 초안으로 되돌리고 싶을 때만 이 버튼을 사용합니다.
-            </p>
             <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block text-sm font-medium text-slate-700">채점 방식</label>
               <select
@@ -829,7 +803,7 @@ export default function GradePage({
             <div className="mt-4 space-y-4">
               {scores.length === 0 ? (
                 <p className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                  AI 결과 전체 가져오기를 누르거나, 채점 요소를 직접 입력하세요.
+                  AI 채점 실행을 누르거나, 채점 요소를 직접 입력하세요.
                 </p>
               ) : (
                 scores.map((score, index) => (
