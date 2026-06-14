@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import {
+  deleteStudentWorkFromDrive,
   fileToBase64,
   gradeAnswer,
   interpretStudentFromDrive,
   listDriveClasses,
+  loadStudentWorkFromDrive,
   readDriveAssessmentBundle,
   recommendGradingMode,
   saveStudentWorkToDrive,
@@ -78,6 +80,8 @@ export default function GradePage({
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
   const [savingOcr, setSavingOcr] = useState(false);
+  const [loadingStudentWork, setLoadingStudentWork] = useState(false);
+  const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [gradingMode, setGradingMode] = useState<GradingMode>("text-only");
   const [effectiveGradingMode, setEffectiveGradingMode] = useState<GradingMode>("text-only");
 
@@ -97,6 +101,7 @@ export default function GradePage({
     if (firstStudent) {
       setSelectedStudentFolderId(firstStudent.folderId);
       setSelectedPageRefs(firstStudent.pageRefs ?? []);
+      void loadSavedStudentWork(firstStudent.folderId);
     }
 
     async function loadDriveClasses() {
@@ -121,6 +126,7 @@ export default function GradePage({
           setSelectedStudentFolderId(firstDriveStudent.folderId);
           setSelectedPageRefs(firstDriveStudent.pageRefs ?? []);
           setSelectedPageIndex(0);
+          void loadSavedStudentWork(firstDriveStudent.folderId);
         }
       } catch {
         // Keep local class index if Drive is unavailable.
@@ -164,6 +170,50 @@ export default function GradePage({
 
   const selectedPage = selectedPageRefs[selectedPageIndex] ?? selectedPageRefs[0];
 
+  async function loadSavedStudentWork(folderId: string) {
+    if (!folderId) return;
+    setLoadingStudentWork(true);
+    try {
+      const saved = await loadStudentWorkFromDrive(folderId);
+      const confirmed = saved.ocrConfirmed ?? saved.ocrDraft;
+      if (confirmed) {
+        setOcrDraft(saved.ocrDraft ?? confirmed);
+        setAnswerText(confirmed.text);
+        setVisualElements(confirmed.visualElements);
+      } else {
+        setOcrDraft(null);
+        setAnswerText(
+          "여기에 교사가 확정한 OCR/답안 해석 결과가 들어갑니다. 불명확한 부분은 ****로 표시하고, 교사가 확인한 뒤 채점합니다.",
+        );
+        setVisualElements(sampleVisuals);
+      }
+
+      setAiResult(saved.aiGrading);
+      const gradingToShow = saved.finalGrading ?? saved.aiGrading;
+      if (gradingToShow) {
+        setScores(gradingToShow.scores);
+        setOverallReason(gradingToShow.overallReason);
+        setFeedback(gradingToShow.feedback);
+        setEffectiveGradingMode(gradingToShow.gradingMode ?? "text-only");
+      } else {
+        setScores([]);
+        setOverallReason("");
+        setFeedback("");
+      }
+      if (saved.finalGrading) {
+        setMessage("저장된 교사 최종 채점 결과를 불러왔습니다.");
+      } else if (saved.aiGrading || confirmed) {
+        setMessage("저장된 OCR/AI 채점 결과를 불러왔습니다.");
+      } else {
+        setMessage(null);
+      }
+    } catch (err) {
+      setError(friendlyError(err, "학생 저장 결과를 불러오지 못했습니다."));
+    } finally {
+      setLoadingStudentWork(false);
+    }
+  }
+
   function selectStudent(folderId: string) {
     setSelectedStudentFolderId(folderId);
     const student = students.find((item) => item.folderId === folderId);
@@ -175,6 +225,58 @@ export default function GradePage({
     setFeedback("");
     setMessage(null);
     setError(null);
+    void loadSavedStudentWork(folderId);
+  }
+
+  async function deleteStudent(student: StudentIndexItem) {
+    const assessment = loadStore().assessments.find((item) => item.id === params.assessmentId);
+    if (!assessment?.folderId) {
+      setError("평가 Drive 폴더를 찾을 수 없어 학생을 삭제할 수 없습니다.");
+      return;
+    }
+    const ok = window.confirm(
+      `${studentLabel(student)} 학생 답안을 목록에서 삭제하고 Drive 폴더를 휴지통으로 보낼까요?`,
+    );
+    if (!ok) return;
+    setDeletingStudentId(student.folderId);
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteStudentWorkFromDrive({
+        assessmentFolderId: assessment.folderId,
+        studentFolderId: student.folderId,
+      });
+      const nextClasses = classIndexes.map((classIndex) => ({
+        ...classIndex,
+        students: classIndex.students.filter((item) => item.folderId !== student.folderId),
+      }));
+      setClassIndexes(nextClasses);
+      const store = loadStore();
+      saveStore({
+        ...store,
+        classIndexes: {
+          ...store.classIndexes,
+          [params.assessmentId]: nextClasses,
+        },
+      });
+      if (selectedStudentFolderId === student.folderId) {
+        const nextStudent = nextClasses.flatMap((item) => item.students)[0];
+        if (nextStudent) {
+          selectStudent(nextStudent.folderId);
+        } else {
+          setSelectedStudentFolderId("");
+          setSelectedPageRefs([]);
+          setScores([]);
+          setOverallReason("");
+          setFeedback("");
+        }
+      }
+      setMessage("학생 답안을 삭제했습니다. Drive에서는 휴지통으로 이동했습니다.");
+    } catch (err) {
+      setError(friendlyError(err, "학생 삭제 실패"));
+    } finally {
+      setDeletingStudentId(null);
+    }
   }
 
   function bringAiResult() {
@@ -420,6 +522,45 @@ export default function GradePage({
             </div>
             {loadingClasses && (
               <p className="mt-2 text-xs text-slate-500">Drive 학생 목록을 불러오는 중입니다.</p>
+            )}
+            {loadingStudentWork && (
+              <p className="mt-2 text-xs text-slate-500">선택한 학생의 저장된 채점 결과를 불러오는 중입니다.</p>
+            )}
+            {students.length > 0 && (
+              <div className="mt-4 max-h-56 overflow-auto rounded-md border border-slate-200">
+                {students.map((student) => {
+                  const selected = student.folderId === selectedStudentFolderId;
+                  return (
+                    <div
+                      key={student.folderId}
+                      className={`flex items-center gap-2 border-t border-slate-100 px-3 py-2 first:border-t-0 ${
+                        selected ? "bg-brand-50" : "bg-white"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectStudent(student.folderId)}
+                        className="min-w-0 flex-1 truncate text-left text-sm text-slate-800"
+                      >
+                        {studentLabel(student)}
+                        {student.status === "final-saved" && (
+                          <span className="ml-2 rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">
+                            완료
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteStudent(student)}
+                        disabled={deletingStudentId === student.folderId}
+                        className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 

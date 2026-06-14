@@ -240,6 +240,50 @@ export function saveStudentWorkToDrive(body: {
   return postJson<{ ok: boolean }>("/api/drive/student-work", body);
 }
 
+export async function loadStudentWorkFromDrive(studentFolderId: string): Promise<{
+  ocrDraft: OcrDraft | null;
+  ocrConfirmed: OcrConfirmed | null;
+  aiGrading: GradingSnapshot | null;
+  finalGrading: GradingRecord["finalGrading"] | null;
+}> {
+  const res = await fetch(
+    `/api/drive/student-work?studentFolderId=${encodeURIComponent(studentFolderId)}`,
+  );
+  if (!res.ok) {
+    let message = `요청 실패 (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function deleteStudentWorkFromDrive(body: {
+  assessmentFolderId: string;
+  studentFolderId: string;
+}): Promise<{ ok: boolean; classIndex?: ClassIndex | null }> {
+  const res = await fetch("/api/drive/student-work", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = `요청 실패 (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 export function interpretStudentFromDrive(body: {
   studentFolderId: string;
   pageRefs: Array<{ fileId: string; name: string; mimeType?: string }>;

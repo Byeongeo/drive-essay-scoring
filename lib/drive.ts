@@ -131,6 +131,21 @@ export async function downloadFile(
   return { bytes, mimeType: meta.mimeType, name: meta.name };
 }
 
+export async function trashDriveFile(
+  accessToken: string,
+  fileId: string,
+): Promise<DriveFile> {
+  return driveFetch<DriveFile>(
+    accessToken,
+    `${driveBaseUrl}/files/${fileId}?fields=id,name,mimeType`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true }),
+    },
+  );
+}
+
 export async function uploadJsonFile(
   accessToken: string,
   name: string,
