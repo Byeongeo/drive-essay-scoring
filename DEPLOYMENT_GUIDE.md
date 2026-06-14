@@ -26,6 +26,8 @@ GEMINI_API_KEY=발급받은 키
 GEMINI_MODEL=gemini-3.5-flash
 ```
 
+텍스트 채점 모델은 평가 설정 화면에서 `Gemini 3.1 Flash-Lite`, `Gemini 3.5 Flash`, `Gemini 3.1 Pro` 중 선택할 수 있습니다. 선택하지 않으면 기본값으로 `Gemini 3.5 Flash`를 사용합니다.
+
 ## 4. Google Drive OAuth 설정
 
 Google Drive에 폴더와 파일을 만들기 위해 OAuth 설정이 필요합니다.
@@ -111,4 +113,4 @@ AI 채점이 실패하면 다음을 확인합니다.
 
 - `GEMINI_API_KEY`가 Vercel에 있는지 확인
 - API 키가 올바른지 확인
-- 모델 이름을 기본값 `gemini-3.5-flash`로 되돌려 테스트
+- 모델 이름을 기본값 `gemini-3.5-flash` 또는 `gemini-3.1-flash-lite`로 되돌려 테스트

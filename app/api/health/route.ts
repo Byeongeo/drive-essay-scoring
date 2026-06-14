@@ -7,5 +7,6 @@ export function GET() {
     googleClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
     nextAuthSecret: Boolean(process.env.NEXTAUTH_SECRET),
     nextAuthUrl: process.env.NEXTAUTH_URL || null,
+    model: process.env.GEMINI_MODEL || "gemini-3.5-flash",
   });
 }

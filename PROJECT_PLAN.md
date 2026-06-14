@@ -94,7 +94,8 @@ flowchart TD
   "subjectId": "subject-id",
   "systemPrompt": "",
   "rubricSource": "structured",
-  "gradingModel": "gemini-3.5-flash"
+  "gradingModel": "",
+  "gradingMode": "text-only"
 }
 ```
 

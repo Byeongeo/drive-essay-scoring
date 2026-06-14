@@ -197,17 +197,20 @@ export default function AssessmentEditPage({
             </label>
           </div>
           <label className="mt-4 block">
-            <span className="text-sm font-medium text-slate-700">채점 모델</span>
+            <span className="text-sm font-medium text-slate-700">텍스트 채점 모델</span>
             <select
               value={assessment.gradingModel}
               onChange={(event) => patchAssessment({ gradingModel: event.target.value })}
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             >
-              <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="">기본값 - Gemini 3.5 Flash</option>
+              <option value="gemini-3.1-flash-lite">빠름/저비용 - Gemini 3.1 Flash-Lite</option>
+              <option value="gemini-3.5-flash">균형/긴 답안 - Gemini 3.5 Flash</option>
+              <option value="gemini-3.1-pro-preview">정확도 우선 - Gemini 3.1 Pro</option>
             </select>
+            <p className="mt-1 text-xs text-slate-500">
+              이미지 포함 채점은 기본 Gemini 모델을 사용합니다.
+            </p>
           </label>
           <label className="mt-4 block">
             <span className="text-sm font-medium text-slate-700">기본 채점 방식</span>

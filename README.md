@@ -32,6 +32,8 @@ NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://localhost:3000
 ```
 
+`GEMINI_MODEL`은 OCR, 루브릭 추출, 이미지 포함 채점에 쓰는 기본 모델입니다. 텍스트 채점 모델은 평가 설정 화면에서 `Gemini 3.1 Flash-Lite`, `Gemini 3.5 Flash`, `Gemini 3.1 Pro` 중 선택합니다.
+
 Vercel 배포 후 `NEXTAUTH_URL`은 배포 주소로 바꿉니다.
 
 ```text

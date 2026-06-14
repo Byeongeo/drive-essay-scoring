@@ -39,7 +39,7 @@ export default function GradePage({
   const [rubric, setRubric] = useState<Rubric>({ criteria: [] });
   const [examples, setExamples] = useState<ScoringExample[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [model, setModel] = useState("gemini-3.5-flash");
+  const [model, setModel] = useState("");
   const [answerText, setAnswerText] = useState(
     "여기에 교사가 확정한 OCR/답안 해석 결과가 들어갑니다. 불명확한 부분은 ****로 표시하고, 교사가 확인한 뒤 채점합니다.",
   );
@@ -67,7 +67,7 @@ export default function GradePage({
     setRubric(store.rubrics[params.assessmentId] ?? { criteria: [] });
     setExamples(store.examples[params.assessmentId] ?? []);
     setSystemPrompt(assessment?.systemPrompt ?? "");
-    setModel(assessment?.gradingModel ?? "gemini-3.5-flash");
+    setModel(assessment?.gradingModel ?? "");
     setGradingMode(assessment?.gradingMode ?? "text-only");
     const savedClasses = store.classIndexes[params.assessmentId] ?? [];
     setClassIndexes(savedClasses);

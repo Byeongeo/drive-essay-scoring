@@ -10,6 +10,7 @@ interface Health {
   googleClientSecret: boolean;
   nextAuthSecret: boolean;
   nextAuthUrl: string | null;
+  model: string;
 }
 
 function StatusRow({
@@ -106,6 +107,13 @@ export default function SetupPage() {
               ok={Boolean(health.nextAuthUrl)}
               help={health.nextAuthUrl || "로컬은 http://localhost:3000, 배포 후에는 Vercel 주소를 넣습니다."}
             />
+            <div className="border-t border-slate-100 px-4 py-3">
+              <p className="font-medium text-slate-900">기본 Gemini 모델</p>
+              <p className="mt-1 text-sm text-slate-500">
+                OCR, 루브릭 추출, 이미지 포함 채점에는 {health.model}을 사용합니다.
+                텍스트 채점은 평가 설정 화면에서 따로 선택할 수 있습니다.
+              </p>
+            </div>
           </>
         )}
       </section>

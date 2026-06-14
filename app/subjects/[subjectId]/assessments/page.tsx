@@ -36,7 +36,7 @@ export default function AssessmentsPage({
           folderId: item.folderId,
           systemPrompt: "",
           rubricSource: "structured",
-          gradingModel: "gemini-3.5-flash",
+          gradingModel: "",
           gradingMode: "text-only",
           createdAt: item.createdAt,
         }));
@@ -65,7 +65,7 @@ export default function AssessmentsPage({
       date: Date.now(),
       systemPrompt: "",
       rubricSource: "structured",
-      gradingModel: "gemini-3.5-flash",
+      gradingModel: "",
       gradingMode: "text-only",
       createdAt: Date.now(),
     };
@@ -100,7 +100,7 @@ export default function AssessmentsPage({
                 <div>
                   <h2 className="font-semibold text-slate-950">{assessment.title}</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    모델 {assessment.gradingModel} · {new Date(assessment.date).toLocaleDateString("ko-KR")}
+                    텍스트 모델 {assessment.gradingModel || "환경변수 기본 모델"} · {new Date(assessment.date).toLocaleDateString("ko-KR")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

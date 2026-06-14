@@ -31,6 +31,11 @@ function inlineImage(base64: string, mimeType: string) {
   return { inlineData: { data: base64, mimeType } };
 }
 
+function resolveGradingModel(input: GradeInput, mode: GradeInput["gradingMode"]) {
+  if (mode === "image-assisted") return DEFAULT_MODEL;
+  return input.model || DEFAULT_MODEL;
+}
+
 const headerSchema = {
   type: Type.OBJECT,
   properties: {
@@ -260,7 +265,12 @@ export async function gradeStudentAnswer(input: GradeInput): Promise<GradingSnap
   const visualText = input.visualElements.length
     ? input.visualElements.map((v) => `- ${v.kind}: ${v.description}`).join("\n")
     : "시각 요소 없음";
-  const effectiveMode = input.gradingMode ?? "text-only";
+  const effectiveMode =
+    input.gradingMode === "auto"
+      ? input.answerImages.length > 0
+        ? "image-assisted"
+        : "text-only"
+      : input.gradingMode ?? "text-only";
 
   const parts: Array<Record<string, unknown>> = [
     {
@@ -284,7 +294,7 @@ export async function gradeStudentAnswer(input: GradeInput): Promise<GradingSnap
   }
 
   const res = await ai.models.generateContent({
-    model: input.model || DEFAULT_MODEL,
+    model: resolveGradingModel(input, effectiveMode),
     contents: [{ role: "user", parts: parts as never }],
     config: {
       responseMimeType: "application/json",
