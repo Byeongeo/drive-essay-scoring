@@ -240,6 +240,7 @@ export async function uploadDataUrlFile(
         `--${boundary}`,
         `Content-Type: ${mimeType}`,
         "",
+        "",
       ].join("\r\n"),
       "utf8",
     ),
