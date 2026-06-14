@@ -1,0 +1,12 @@
+.next
+node_modules
+.npm-cache
+.env
+.env.local
+.env.*.local
+dist
+coverage
+*.tsbuildinfo
+.vercel
+.DS_Store
+Thumbs.db

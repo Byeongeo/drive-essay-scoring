@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "app/api/classify/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/interpret/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/grade/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/rubric/extract/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
