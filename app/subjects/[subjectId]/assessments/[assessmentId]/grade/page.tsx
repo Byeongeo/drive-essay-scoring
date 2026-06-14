@@ -121,6 +121,14 @@ export default function GradePage({
         const driveClasses = await listDriveClasses(assessment.folderId);
         if (!active) return;
         setClassIndexes(driveClasses);
+        const latestStore = loadStore();
+        saveStore({
+          ...latestStore,
+          classIndexes: {
+            ...latestStore.classIndexes,
+            [params.assessmentId]: driveClasses,
+          },
+        });
         const firstDriveStudent = driveClasses.flatMap((item) => item.students)[0];
         if (firstDriveStudent) {
           setSelectedStudentFolderId(firstDriveStudent.folderId);
@@ -450,8 +458,7 @@ export default function GradePage({
         finalGrading,
       });
       const store = loadStore();
-      const currentClasses = store.classIndexes[params.assessmentId] ?? classIndexes;
-      const nextClasses = currentClasses.map((classIndex) => ({
+      const nextClasses = classIndexes.map((classIndex) => ({
         ...classIndex,
         students: classIndex.students.map((student) =>
           student.folderId === selectedStudentFolderId
