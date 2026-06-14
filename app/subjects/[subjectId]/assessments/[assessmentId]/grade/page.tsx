@@ -28,9 +28,25 @@ import type {
 const sampleVisuals: VisualElement[] = [
   {
     kind: "diagram",
-    description: "학생 답안에 간단한 도형이나 그래프가 있는 경우 이 영역에 AI 해석이 표시됩니다.",
+    description: "학생 답안에 수식, 도형, 그래프, 그림이 있으면 AI 해석 결과가 여기에 표시됩니다.",
   },
 ];
+
+function friendlyError(err: unknown, fallback: string) {
+  const message = err instanceof Error ? err.message : fallback;
+  if (
+    message.includes("401") ||
+    message.includes("UNAUTHENTICATED") ||
+    message.includes("Invalid Credentials")
+  ) {
+    return "Google Drive 로그인이 만료되었습니다. 첫 화면에서 로그아웃 후 다시 Google Drive에 연결한 다음 저장해 주세요.";
+  }
+  return message;
+}
+
+function studentLabel(student: StudentIndexItem) {
+  return `${student.grade}-${student.classNo}-${student.studentNo} ${student.name || "이름 없음"}`;
+}
 
 export default function GradePage({
   params,
@@ -54,11 +70,14 @@ export default function GradePage({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [classIndexes, setClassIndexes] = useState<ClassIndex[]>([]);
-  const [selectedStudentFolderId, setSelectedStudentFolderId] = useState<string>("");
+  const [selectedStudentFolderId, setSelectedStudentFolderId] = useState("");
   const [selectedPageRefs, setSelectedPageRefs] = useState<DriveRef[]>([]);
+  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+  const [pageZoom, setPageZoom] = useState(125);
   const [ocrDraft, setOcrDraft] = useState<OcrDraft | null>(null);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
+  const [savingOcr, setSavingOcr] = useState(false);
   const [gradingMode, setGradingMode] = useState<GradingMode>("text-only");
   const [effectiveGradingMode, setEffectiveGradingMode] = useState<GradingMode>("text-only");
 
@@ -101,6 +120,7 @@ export default function GradePage({
         if (firstDriveStudent) {
           setSelectedStudentFolderId(firstDriveStudent.folderId);
           setSelectedPageRefs(firstDriveStudent.pageRefs ?? []);
+          setSelectedPageIndex(0);
         }
       } catch {
         // Keep local class index if Drive is unavailable.
@@ -134,6 +154,21 @@ export default function GradePage({
     [visualElements],
   );
 
+  const selectedPage = selectedPageRefs[selectedPageIndex] ?? selectedPageRefs[0];
+
+  function selectStudent(folderId: string) {
+    setSelectedStudentFolderId(folderId);
+    const student = students.find((item) => item.folderId === folderId);
+    setSelectedPageRefs(student?.pageRefs ?? []);
+    setSelectedPageIndex(0);
+    setAiResult(null);
+    setScores([]);
+    setOverallReason("");
+    setFeedback("");
+    setMessage(null);
+    setError(null);
+  }
+
   function bringAiResult() {
     if (!aiResult) return;
     setScores(aiResult.scores);
@@ -154,18 +189,14 @@ export default function GradePage({
       ) {
         throw new Error("루브릭, 시스템 프롬프트, 문제/채점기준표 첨부 중 하나는 필요합니다.");
       }
-      const modeToUse =
-        gradingMode === "auto" ? recommendedMode : gradingMode;
+      const modeToUse = gradingMode === "auto" ? recommendedMode : gradingMode;
       setEffectiveGradingMode(modeToUse);
       const answerImagesPromise =
         modeToUse === "image-assisted"
           ? Promise.all(
               selectedPageRefs.map(async (pageRef) => {
                 const image = await fileToBase64(pageRef.fileId);
-                return {
-                  ...image,
-                  name: pageRef.name,
-                };
+                return { ...image, name: pageRef.name };
               }),
             )
           : Promise.resolve([]);
@@ -212,7 +243,7 @@ export default function GradePage({
       setAiResult(result);
       setMessage("AI 채점 초안을 만들었습니다. 결과 전체 가져오기를 누르면 수정할 수 있습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "AI 채점 실패");
+      setError(friendlyError(err, "AI 채점 실패"));
     } finally {
       setRunning(false);
     }
@@ -221,6 +252,7 @@ export default function GradePage({
   async function makeOcrDraft() {
     setError(null);
     setMessage(null);
+    setSavingOcr(true);
     const draft: OcrDraft = {
       text: answerText,
       maskedTokens: [],
@@ -235,7 +267,9 @@ export default function GradePage({
       });
       setMessage("ocr-draft.json을 저장했습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "OCR 초안 저장 실패");
+      setError(friendlyError(err, "OCR 초안 저장 실패"));
+    } finally {
+      setSavingOcr(false);
     }
   }
 
@@ -259,7 +293,7 @@ export default function GradePage({
       if (gradingMode === "auto") setEffectiveGradingMode(nextRecommendedMode);
       setMessage("AI가 원본 페이지를 해석해 ocr-draft.json을 저장했습니다. 내용을 확인한 뒤 확정 저장하세요.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "AI OCR/해석 실패");
+      setError(friendlyError(err, "AI OCR/해석 실패"));
     } finally {
       setInterpreting(false);
     }
@@ -268,6 +302,7 @@ export default function GradePage({
   async function confirmOcr() {
     setError(null);
     setMessage(null);
+    setSavingOcr(true);
     try {
       if (!selectedStudentFolderId) throw new Error("학생을 먼저 선택하세요.");
       const confirmed = {
@@ -283,7 +318,9 @@ export default function GradePage({
       });
       setMessage("ocr-confirmed.json을 저장했습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "OCR 확정 저장 실패");
+      setError(friendlyError(err, "OCR 확정 저장 실패"));
+    } finally {
+      setSavingOcr(false);
     }
   }
 
@@ -295,6 +332,7 @@ export default function GradePage({
         throw new Error("저장할 학생을 선택하세요. PDF 업로드 화면에서 먼저 Drive 저장을 해야 학생 목록이 생깁니다.");
       }
       const finalGrading = {
+        gradingMode: effectiveGradingMode,
         scores,
         totalScore: total,
         overallReason,
@@ -332,101 +370,150 @@ export default function GradePage({
       setClassIndexes(nextClasses);
       setMessage("선택한 학생 폴더에 ai-grading.json/final-grading.json을 저장했습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "최종 저장 실패");
+      setError(friendlyError(err, "최종 저장 실패"));
     }
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-8">
+    <main className="mx-auto max-w-[1800px] px-5 py-8">
       <AppHeader
         title="채점"
         backHref={`/subjects/${params.subjectId}/assessments`}
-        backLabel="회차 목록"
+        backLabel="평가 목록"
       />
 
-      <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(680px,1.1fr)_minmax(560px,0.9fr)]">
         <section className="space-y-5">
           <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-base font-semibold text-slate-900">학생 선택</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              PDF 업로드 화면에서 Drive에 저장한 학생 목록입니다.
-            </p>
-            <select
-              value={selectedStudentFolderId}
-              onChange={(event) => {
-                const folderId = event.target.value;
-                setSelectedStudentFolderId(folderId);
-                const student = students.find((item) => item.folderId === folderId);
-                setSelectedPageRefs(student?.pageRefs ?? []);
-              }}
-              className="mt-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="">학생 선택</option>
-              {students.map((student) => (
-                <option key={student.folderId} value={student.folderId}>
-                  {student.grade}학년 {student.classNo}반 {student.studentNo}번 {student.name || "이름 없음"}
-                </option>
-              ))}
-            </select>
-            {loadingClasses && <p className="mt-2 text-xs text-slate-500">Drive 학생 목록 불러오는 중</p>}
-            {selectedStudent && (
-              <p className="mt-2 text-xs text-slate-500">
-                선택: {selectedStudent.grade}학년 {selectedStudent.classNo}반 {selectedStudent.studentNo}번 {selectedStudent.name}
-              </p>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <label className="block flex-1">
+                <span className="text-sm font-medium text-slate-700">학생 선택</span>
+                <select
+                  value={selectedStudentFolderId}
+                  onChange={(event) => selectStudent(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">학생 선택</option>
+                  {students.map((student) => (
+                    <option key={student.folderId} value={student.folderId}>
+                      {studentLabel(student)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedStudent && (
+                <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  선택: {studentLabel(selectedStudent)}
+                </p>
+              )}
+            </div>
+            {loadingClasses && (
+              <p className="mt-2 text-xs text-slate-500">Drive 학생 목록을 불러오는 중입니다.</p>
             )}
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-base font-semibold text-slate-900">원본 페이지</h2>
-            {selectedPageRefs.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-slate-900">원본 페이지</h2>
+              <div className="flex items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPageIndex((value) => Math.max(0, value - 1))}
+                  disabled={selectedPageIndex === 0}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >
+                  이전
+                </button>
+                <span className="min-w-16 text-center text-slate-600">
+                  {selectedPageRefs.length ? selectedPageIndex + 1 : 0} / {selectedPageRefs.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedPageIndex((value) =>
+                      Math.min(selectedPageRefs.length - 1, value + 1),
+                    )
+                  }
+                  disabled={selectedPageIndex >= selectedPageRefs.length - 1}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >
+                  다음
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageZoom((value) => Math.max(75, value - 25))}
+                  className="rounded-md border border-slate-300 px-3 py-1.5"
+                >
+                  -
+                </button>
+                <span className="min-w-14 text-center text-slate-600">{pageZoom}%</span>
+                <button
+                  type="button"
+                  onClick={() => setPageZoom((value) => Math.min(250, value + 25))}
+                  className="rounded-md border border-slate-300 px-3 py-1.5"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            {selectedPage ? (
+              <div className="mt-4 h-[72vh] min-h-[620px] overflow-auto rounded-md border border-slate-200 bg-slate-100 p-4">
+                <div className="mx-auto" style={{ width: `${pageZoom}%`, minWidth: "640px" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/drive/file/${selectedPage.fileId}`}
+                    alt={selectedPage.name}
+                    className="w-full rounded border border-slate-300 bg-white shadow-sm"
+                  />
+                  <p className="mt-2 text-xs text-slate-500">{selectedPage.name}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-md bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
                 원본 페이지가 없습니다. PDF 업로드 화면에서 Drive 저장을 다시 확인하세요.
               </p>
-            ) : (
-              <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
-                {selectedPageRefs.map((pageRef) => (
-                  <div key={pageRef.fileId} className="w-40 shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/drive/file/${pageRef.fileId}`}
-                      alt={pageRef.name}
-                      className="h-56 w-40 rounded border border-slate-200 object-contain"
-                    />
-                    <p className="mt-1 truncate text-xs text-slate-500">{pageRef.name}</p>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-base font-semibold text-slate-900">교사 확정 답안</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              OCR과 이미지 해석을 확인한 뒤 이 텍스트를 기준으로 채점합니다.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">교사 확정 답안</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  원본 페이지와 OCR 결과를 비교한 뒤 이 텍스트를 기준으로 채점합니다.
+                </p>
+              </div>
+              {ocrDraft && (
+                <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                  OCR 초안 있음
+                </span>
+              )}
+            </div>
             <textarea
               value={answerText}
               onChange={(event) => setAnswerText(event.target.value)}
-              rows={14}
-              className="mt-4 min-h-96 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+              rows={18}
+              className="mt-4 min-h-[520px] w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => void runAiInterpretation()}
-                disabled={interpreting}
+                disabled={interpreting || !selectedStudentFolderId}
                 className="rounded-md bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
               >
                 {interpreting ? "AI 해석 중" : "AI OCR/해석 실행"}
               </button>
               <button
                 onClick={() => void makeOcrDraft()}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                disabled={savingOcr || !selectedStudentFolderId}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 OCR 초안 저장
               </button>
               <button
                 onClick={() => void confirmOcr()}
-                className="rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"
+                disabled={savingOcr || !selectedStudentFolderId}
+                className="rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 OCR/해석 확정 저장
               </button>
@@ -457,7 +544,7 @@ export default function GradePage({
               <div>
                 <h2 className="text-base font-semibold text-slate-900">AI 채점 초안</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  AI가 만든 점수, 근거, 피드백 전체를 교사 편집창으로 가져옵니다.
+                  AI가 만든 점수, 근거, 피드백 전체를 교사 편집창으로 가져올 수 있습니다.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -490,7 +577,8 @@ export default function GradePage({
               </select>
               <p className="mt-2 text-xs text-slate-500">
                 현재 추천: {recommendedMode === "image-assisted" ? "이미지 포함 채점" : "텍스트 기반 채점"}
-                {gradingMode === "auto" && ` · 실제 적용: ${effectiveGradingMode === "image-assisted" ? "이미지 포함" : "텍스트 기반"}`}
+                {gradingMode === "auto" &&
+                  ` · 실제 적용: ${effectiveGradingMode === "image-assisted" ? "이미지 포함" : "텍스트 기반"}`}
               </p>
             </div>
             {aiResult && (
@@ -577,14 +665,14 @@ export default function GradePage({
             </label>
 
             {(message || error) && (
-              <p className={`mt-4 text-sm ${error ? "text-red-600" : "text-green-700"}`}>
+              <p className={`mt-4 whitespace-pre-wrap text-sm ${error ? "text-red-600" : "text-green-700"}`}>
                 {error || message}
               </p>
             )}
 
             <div className="mt-5 flex justify-end">
               <button
-                onClick={saveFinal}
+                onClick={() => void saveFinal()}
                 className="rounded-md bg-slate-950 px-5 py-2 text-sm font-medium text-white hover:bg-slate-800"
               >
                 최종 저장
