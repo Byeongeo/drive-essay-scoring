@@ -73,7 +73,7 @@ export default function GradePage({
   const [selectedStudentFolderId, setSelectedStudentFolderId] = useState("");
   const [selectedPageRefs, setSelectedPageRefs] = useState<DriveRef[]>([]);
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
-  const [pageZoom, setPageZoom] = useState(125);
+  const [pageZoom, setPageZoom] = useState(90);
   const [ocrDraft, setOcrDraft] = useState<OcrDraft | null>(null);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
@@ -136,6 +136,14 @@ export default function GradePage({
 
   const total = useMemo(
     () => scores.reduce((sum, item) => sum + Number(item.score || 0), 0),
+    [scores],
+  );
+  const maxTotal = useMemo(
+    () =>
+      scores.reduce(
+        (sum, item) => sum + (typeof item.maxScore === "number" ? item.maxScore : 0),
+        0,
+      ),
     [scores],
   );
 
@@ -241,7 +249,10 @@ export default function GradePage({
         model,
       });
       setAiResult(result);
-      setMessage("AI 채점 초안을 만들었습니다. 결과 전체 가져오기를 누르면 수정할 수 있습니다.");
+      setScores(result.scores);
+      setOverallReason(result.overallReason);
+      setFeedback(result.feedback);
+      setMessage("AI 채점 초안을 만들고 채점표에 반영했습니다. 필요한 부분을 수정한 뒤 최종 저장하세요.");
     } catch (err) {
       setError(friendlyError(err, "AI 채점 실패"));
     } finally {
@@ -457,8 +468,8 @@ export default function GradePage({
               </div>
             </div>
             {selectedPage ? (
-              <div className="mt-4 h-[72vh] min-h-[620px] overflow-auto rounded-md border border-slate-200 bg-slate-100 p-4">
-                <div className="mx-auto" style={{ width: `${pageZoom}%`, minWidth: "640px" }}>
+              <div className="mt-4 h-[48vh] min-h-[420px] overflow-auto rounded-md border border-slate-200 bg-slate-100 p-4">
+                <div className="mx-auto" style={{ width: `${pageZoom}%`, minWidth: "460px" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`/api/drive/file/${selectedPage.fileId}`}
@@ -492,8 +503,8 @@ export default function GradePage({
             <textarea
               value={answerText}
               onChange={(event) => setAnswerText(event.target.value)}
-              rows={18}
-              className="mt-4 min-h-[520px] w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+              rows={14}
+              className="mt-4 h-[48vh] min-h-[420px] w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <button
@@ -587,6 +598,29 @@ export default function GradePage({
                 <p className="mt-1 text-xs text-slate-500">
                   사용 방식: {aiResult.gradingMode === "image-assisted" ? "이미지 포함 채점" : "텍스트 기반 채점"}
                 </p>
+                <div className="mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
+                  <div className="grid grid-cols-[1fr_96px] bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                    <span>채점 요소</span>
+                    <span className="text-right">점수</span>
+                  </div>
+                  {aiResult.scores.map((score, index) => (
+                    <div key={`${score.criterionName}-${index}`} className="border-t border-slate-100 px-3 py-2">
+                      <div className="grid grid-cols-[1fr_96px] gap-3">
+                        <p className="font-medium text-slate-800">{score.criterionName}</p>
+                        <p className="text-right font-semibold text-slate-950">
+                          {score.score}
+                          {typeof score.maxScore === "number" ? ` / ${score.maxScore}` : ""}
+                        </p>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                        {score.reason}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 whitespace-pre-wrap font-medium text-slate-800">
+                  {aiResult.overallReason}
+                </p>
                 <p className="mt-2 whitespace-pre-wrap">{aiResult.feedback}</p>
               </div>
             )}
@@ -597,6 +631,7 @@ export default function GradePage({
               <h2 className="text-base font-semibold text-slate-900">교사 최종 채점</h2>
               <div className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white">
                 총점 {total}
+                {maxTotal > 0 ? ` / ${maxTotal}` : ""}
               </div>
             </div>
 
@@ -608,7 +643,7 @@ export default function GradePage({
               ) : (
                 scores.map((score, index) => (
                   <div key={index} className="rounded-md border border-slate-200 p-4">
-                    <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                    <div className="grid gap-3 sm:grid-cols-[1fr_120px_120px]">
                       <input
                         value={score.criterionName}
                         onChange={(event) => {
@@ -616,6 +651,24 @@ export default function GradePage({
                           next[index] = { ...score, criterionName: event.target.value };
                           setScores(next);
                         }}
+                        placeholder="채점 요소"
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="number"
+                        value={score.maxScore ?? ""}
+                        onChange={(event) => {
+                          const next = [...scores];
+                          next[index] = {
+                            ...score,
+                            maxScore:
+                              event.target.value === ""
+                                ? undefined
+                                : Number(event.target.value),
+                          };
+                          setScores(next);
+                        }}
+                        placeholder="만점"
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                       />
                       <input
@@ -626,6 +679,7 @@ export default function GradePage({
                           next[index] = { ...score, score: Number(event.target.value) };
                           setScores(next);
                         }}
+                        placeholder="부여 점수"
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                       />
                     </div>

@@ -230,6 +230,7 @@ const gradingSchema = {
         properties: {
           criterionName: { type: Type.STRING },
           score: { type: Type.NUMBER },
+          maxScore: { type: Type.NUMBER, nullable: true },
           reason: { type: Type.STRING },
         },
         required: ["criterionName", "score", "reason"],
@@ -282,7 +283,13 @@ export async function gradeStudentAnswer(input: GradeInput): Promise<GradingSnap
         "너는 교사를 돕는 서논술형 채점 보조자다. " +
         "채점 결과는 교사가 검토하고 수정할 초안이므로, 점수와 근거를 구체적으로 작성한다. " +
         "구조화된 루브릭이 없으면 첨부된 문제지, 채점기준표, 배점표, 예시답안, 시스템 프롬프트에서 채점 기준을 찾아 적용한다. " +
-        "자료 사이에 충돌이 있으면 명시적인 루브릭, 채점기준표, 시스템 프롬프트, 예시답안 순으로 우선 적용한다.\n\n" +
+        "자료 사이에 충돌이 있으면 명시적인 루브릭, 채점기준표, 시스템 프롬프트, 예시답안 순으로 우선 적용한다. " +
+        "scores 배열에는 채점기준표에 있는 채점 요소를 빠뜨리지 말고 요소별로 하나씩 넣어라. " +
+        "각 score는 해당 요소에서 부여한 점수이고, maxScore는 채점기준표에서 확인한 해당 요소의 만점이다. " +
+        "maxScore를 직접 확인할 수 없을 때만 null로 둔다. " +
+        "reason에는 왜 그 점수를 주었는지와 해당 요소에서 몇 점 만점에 몇 점을 주었는지를 반드시 포함하라. " +
+        "overallReason에는 요소별 점수 합산 과정과 총점 산출 이유를 설명하라. " +
+        "feedback에는 학생에게 줄 구체적인 개선 피드백을 작성하라.\n\n" +
         `[문제/채점기준표 첨부]\n${
           input.sourceMaterials?.length
             ? input.sourceMaterials.map((item) => `- ${item.name}`).join("\n")

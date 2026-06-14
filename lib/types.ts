@@ -151,6 +151,7 @@ export interface OcrConfirmed extends OcrDraft {
 export interface CriterionScore {
   criterionName: string;
   score: number;
+  maxScore?: number;
   reason: string;
 }
 
