@@ -20,7 +20,7 @@ export default function RubricBuilder({
   rubric: Rubric;
   onChange: (rubric: Rubric) => void;
 }) {
-  const criteria = rubric.criteria.length ? rubric.criteria : [emptyCriterion()];
+  const criteria = rubric.criteria;
 
   function update(next: RubricCriterion[]) {
     onChange({ criteria: next });
@@ -29,7 +29,7 @@ export default function RubricBuilder({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">채점 요소 {criteria.length}개</span>
+        <span className="text-sm text-slate-500">채점 기준 {criteria.length}개</span>
         <button
           type="button"
           onClick={() => update([...criteria, emptyCriterion()])}
@@ -38,6 +38,12 @@ export default function RubricBuilder({
           기준 추가
         </button>
       </div>
+
+      {criteria.length === 0 && (
+        <p className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">
+          직접 루브릭을 넣지 않아도 됩니다. 문제지나 채점기준표 파일을 첨부하면 AI가 그 자료를 참고해 채점합니다.
+        </p>
+      )}
 
       {criteria.map((criterion, criterionIndex) => (
         <div key={criterionIndex} className="rounded-lg border border-slate-200 bg-white p-4">
@@ -63,7 +69,7 @@ export default function RubricBuilder({
 
           <div className="mt-4 space-y-3">
             {criterion.levels.map((level, levelIndex) => (
-              <div key={levelIndex} className="grid gap-2 sm:grid-cols-[100px_90px_1fr_48px]">
+              <div key={levelIndex} className="grid gap-2 sm:grid-cols-[100px_90px_1fr_56px]">
                 <input
                   value={level.label}
                   onChange={(event) => {
@@ -73,7 +79,7 @@ export default function RubricBuilder({
                     next[criterionIndex] = { ...criterion, levels };
                     update(next);
                   }}
-                  placeholder="상/중/하"
+                  placeholder="수준"
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                 />
                 <input
@@ -98,7 +104,7 @@ export default function RubricBuilder({
                     update(next);
                   }}
                   rows={2}
-                  placeholder="세부 채점 기준"
+                  placeholder="해당 수준의 채점 기준"
                   className="min-h-20 rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
                 />
                 <button
@@ -129,7 +135,7 @@ export default function RubricBuilder({
             }}
             className="mt-3 text-sm font-medium text-brand-700 hover:text-brand-600"
           >
-            급간 추가
+            점수 구간 추가
           </button>
         </div>
       ))}

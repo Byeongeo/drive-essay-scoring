@@ -19,12 +19,14 @@ export async function POST(req: Request) {
       rubric: body.rubric,
       examples: body.examples ?? [],
       systemPrompt: body.systemPrompt ?? "",
-        confirmedAnswerText: body.confirmedAnswerText,
-        visualElements: body.visualElements ?? [],
-        answerImages: body.answerImages ?? [],
-        gradingMode: body.gradingMode,
-        model: body.model,
-      });
+      sourceMaterials: body.sourceMaterials ?? [],
+      exampleMaterials: body.exampleMaterials ?? [],
+      confirmedAnswerText: body.confirmedAnswerText,
+      visualElements: body.visualElements ?? [],
+      answerImages: body.answerImages ?? [],
+      gradingMode: body.gradingMode,
+      model: body.model,
+    });
 
     return NextResponse.json(result);
   } catch (err) {

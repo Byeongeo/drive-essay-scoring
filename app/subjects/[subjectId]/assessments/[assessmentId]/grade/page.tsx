@@ -7,6 +7,7 @@ import {
   gradeAnswer,
   interpretStudentFromDrive,
   listDriveClasses,
+  readDriveAssessmentBundle,
   recommendGradingMode,
   saveStudentWorkToDrive,
 } from "@/lib/api";
@@ -38,6 +39,7 @@ export default function GradePage({
 }) {
   const [rubric, setRubric] = useState<Rubric>({ criteria: [] });
   const [examples, setExamples] = useState<ScoringExample[]>([]);
+  const [sourceMaterials, setSourceMaterials] = useState<DriveRef[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [model, setModel] = useState("");
   const [answerText, setAnswerText] = useState(
@@ -66,6 +68,7 @@ export default function GradePage({
     const assessment = store.assessments.find((item) => item.id === params.assessmentId);
     setRubric(store.rubrics[params.assessmentId] ?? { criteria: [] });
     setExamples(store.examples[params.assessmentId] ?? []);
+    setSourceMaterials(assessment?.sourceMaterials ?? []);
     setSystemPrompt(assessment?.systemPrompt ?? "");
     setModel(assessment?.gradingModel ?? "");
     setGradingMode(assessment?.gradingMode ?? "text-only");
@@ -81,6 +84,16 @@ export default function GradePage({
       if (!assessment?.folderId) return;
       setLoadingClasses(true);
       try {
+        const bundle = await readDriveAssessmentBundle(assessment.folderId);
+        if (!active) return;
+        if (bundle.assessment) {
+          setRubric(bundle.rubric);
+          setExamples(bundle.examples);
+          setSourceMaterials(bundle.assessment.sourceMaterials ?? []);
+          setSystemPrompt(bundle.assessment.systemPrompt ?? "");
+          setModel(bundle.assessment.gradingModel ?? "");
+          setGradingMode(bundle.assessment.gradingMode ?? "text-only");
+        }
         const driveClasses = await listDriveClasses(assessment.folderId);
         if (!active) return;
         setClassIndexes(driveClasses);
@@ -134,15 +147,19 @@ export default function GradePage({
     setError(null);
     setMessage(null);
     try {
-      if (rubric.criteria.length === 0) {
-        throw new Error("루브릭이 없습니다. 회차 설정에서 루브릭을 입력하거나 프롬프트에서 추출하세요.");
+      if (
+        rubric.criteria.length === 0 &&
+        !systemPrompt.trim() &&
+        sourceMaterials.length === 0
+      ) {
+        throw new Error("루브릭, 시스템 프롬프트, 문제/채점기준표 첨부 중 하나는 필요합니다.");
       }
       const modeToUse =
         gradingMode === "auto" ? recommendedMode : gradingMode;
       setEffectiveGradingMode(modeToUse);
-      const answerImages =
+      const answerImagesPromise =
         modeToUse === "image-assisted"
-          ? await Promise.all(
+          ? Promise.all(
               selectedPageRefs.map(async (pageRef) => {
                 const image = await fileToBase64(pageRef.fileId);
                 return {
@@ -151,11 +168,41 @@ export default function GradePage({
                 };
               }),
             )
-          : [];
+          : Promise.resolve([]);
+      const sourceMaterialsPromise = Promise.all(
+        sourceMaterials.map(async (file) => {
+          const loaded = await fileToBase64(file.fileId);
+          return {
+            ...loaded,
+            mimeType: file.mimeType || loaded.mimeType,
+            name: file.name,
+          };
+        }),
+      );
+      const exampleMaterialsPromise = Promise.all(
+        examples.flatMap((example) =>
+          example.attachments.map(async (file) => {
+            const loaded = await fileToBase64(file.fileId);
+            return {
+              exampleId: example.id,
+              ...loaded,
+              mimeType: file.mimeType || loaded.mimeType,
+              name: file.name,
+            };
+          }),
+        ),
+      );
+      const [answerImages, loadedSourceMaterials, loadedExampleMaterials] = await Promise.all([
+        answerImagesPromise,
+        sourceMaterialsPromise,
+        exampleMaterialsPromise,
+      ]);
       const result = await gradeAnswer({
         rubric,
         examples,
         systemPrompt,
+        sourceMaterials: loadedSourceMaterials,
+        exampleMaterials: loadedExampleMaterials,
         confirmedAnswerText: answerText,
         visualElements,
         answerImages,

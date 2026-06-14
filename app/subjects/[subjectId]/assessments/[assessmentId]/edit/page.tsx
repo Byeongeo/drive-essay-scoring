@@ -9,9 +9,10 @@ import {
   readDriveAssessmentBundle,
   saveDriveAssessment,
   updateDriveAssessment,
+  uploadAssessmentFiles,
 } from "@/lib/api";
 import { loadStore, saveStore, type DraftAssessment } from "@/lib/client-store";
-import type { Rubric, ScoringExample } from "@/lib/types";
+import type { DriveRef, Rubric, ScoringExample } from "@/lib/types";
 
 function toDateInput(value: number): string {
   const date = new Date(value);
@@ -22,6 +23,15 @@ function toDateInput(value: number): string {
 function fromDateInput(value: string): number {
   const ms = new Date(`${value}T00:00:00`).getTime();
   return Number.isNaN(ms) ? Date.now() : ms;
+}
+
+function readFileAsDataUrl(file: File): Promise<{ name: string; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, dataUrl: String(reader.result) });
+    reader.onerror = () => reject(new Error(`${file.name} 파일을 읽지 못했습니다.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function AssessmentEditPage({
@@ -35,6 +45,7 @@ export default function AssessmentEditPage({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [uploadingSource, setUploadingSource] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -65,80 +76,161 @@ export default function AssessmentEditPage({
     return () => {
       active = false;
     };
-  }, [params.assessmentId]);
+  }, [params.assessmentId, params.subjectId]);
 
   function patchAssessment(patch: Partial<DraftAssessment>) {
     if (!assessment) return;
     setAssessment({ ...assessment, ...patch });
   }
 
-  async function save() {
-    if (!assessment) return;
+  function saveLocalDraft(nextAssessment: DraftAssessment, nextExamples = examples) {
     const store = loadStore();
-    let nextAssessment = assessment;
-
-    if (assessment.folderId) {
-      try {
-        await updateDriveAssessment({
-          assessment: {
-            id: assessment.id,
-            subjectId: assessment.subjectId,
-            title: assessment.title,
-            date: assessment.date,
-            folderId: assessment.folderId,
-            systemPrompt: assessment.systemPrompt,
-            rubricSource: assessment.rubricSource,
-            gradingModel: assessment.gradingModel,
-            gradingMode: assessment.gradingMode,
-            createdAt: assessment.createdAt,
-          },
-          rubric,
-          examples,
-        });
-        setMessage("저장했습니다. Drive의 회차 JSON도 수정했습니다.");
-      } catch {
-        setMessage("저장했습니다. Drive 수정 저장은 실패해서 브라우저 임시 저장만 반영했습니다.");
-      }
-    } else {
-      try {
-        const saved = await saveDriveAssessment({
-          subjectId: params.subjectId,
-          assessment: {
-            id: assessment.id,
-            subjectId: assessment.subjectId,
-            title: assessment.title,
-            date: assessment.date,
-            systemPrompt: assessment.systemPrompt,
-            rubricSource: assessment.rubricSource,
-            gradingModel: assessment.gradingModel,
-            gradingMode: assessment.gradingMode,
-            createdAt: assessment.createdAt,
-          },
-          rubric,
-          examples,
-        });
-        nextAssessment = { ...assessment, folderId: saved.folderId };
-        setAssessment(nextAssessment);
-        setMessage("저장했습니다. Drive에도 회차 폴더와 JSON 파일을 만들었습니다.");
-      } catch {
-        setMessage("저장했습니다. Drive 연결 전이거나 과목이 Drive에 없어 브라우저에만 임시 저장했습니다.");
-      }
-    }
-
     saveStore({
       ...store,
       assessments: store.assessments.map((item) =>
-        item.id === assessment.id ? nextAssessment : item,
+        item.id === nextAssessment.id ? nextAssessment : item,
       ),
       rubrics: { ...store.rubrics, [nextAssessment.id]: rubric },
-      examples: { ...store.examples, [nextAssessment.id]: examples },
+      examples: { ...store.examples, [nextAssessment.id]: nextExamples },
     });
+  }
+
+  async function persistAssessment(showMessage = true): Promise<DraftAssessment | null> {
+    if (!assessment) return null;
+    let nextAssessment = assessment;
+
+    if (assessment.folderId) {
+      await updateDriveAssessment({
+        assessment: {
+          id: assessment.id,
+          subjectId: assessment.subjectId,
+          title: assessment.title,
+          date: assessment.date,
+          folderId: assessment.folderId,
+          systemPrompt: assessment.systemPrompt,
+          rubricSource: assessment.rubricSource,
+          gradingModel: assessment.gradingModel,
+          gradingMode: assessment.gradingMode,
+          sourceMaterials: assessment.sourceMaterials ?? [],
+          createdAt: assessment.createdAt,
+        },
+        rubric,
+        examples,
+      });
+      if (showMessage) setMessage("저장했습니다. Drive의 평가 설정도 수정했습니다.");
+    } else {
+      const saved = await saveDriveAssessment({
+        subjectId: params.subjectId,
+        assessment: {
+          id: assessment.id,
+          subjectId: assessment.subjectId,
+          title: assessment.title,
+          date: assessment.date,
+          systemPrompt: assessment.systemPrompt,
+          rubricSource: assessment.rubricSource,
+          gradingModel: assessment.gradingModel,
+          gradingMode: assessment.gradingMode,
+          sourceMaterials: assessment.sourceMaterials ?? [],
+          createdAt: assessment.createdAt,
+        },
+        rubric,
+        examples,
+      });
+      nextAssessment = {
+        ...assessment,
+        folderId: saved.folderId,
+        sourceMaterials: saved.sourceMaterials ?? assessment.sourceMaterials ?? [],
+      };
+      setAssessment(nextAssessment);
+      if (showMessage) {
+        setMessage("저장했습니다. Drive에 평가 폴더와 설정 파일을 만들었습니다.");
+      }
+    }
+
+    saveLocalDraft(nextAssessment);
     setError(null);
+    return nextAssessment;
+  }
+
+  async function save() {
+    setError(null);
+    setMessage(null);
+    try {
+      await persistAssessment(true);
+    } catch (err) {
+      saveLocalDraft(assessment as DraftAssessment);
+      setError(err instanceof Error ? err.message : "저장에 실패했습니다.");
+    }
+  }
+
+  async function handleSourceUpload(files: FileList | null) {
+    if (!files?.length || !assessment) return;
+    setUploadingSource(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const savedAssessment = await persistAssessment(false);
+      if (!savedAssessment?.folderId) {
+        throw new Error("Drive 평가 폴더가 필요합니다. Google Drive 연결을 먼저 확인해 주세요.");
+      }
+      const payload = await Promise.all(Array.from(files).map(readFileAsDataUrl));
+      const uploaded = await uploadAssessmentFiles({
+        assessmentFolderId: savedAssessment.folderId,
+        kind: "source",
+        files: payload,
+      });
+      const nextAssessment = {
+        ...savedAssessment,
+        sourceMaterials: [...(savedAssessment.sourceMaterials ?? []), ...uploaded.files],
+      };
+      setAssessment(nextAssessment);
+      saveLocalDraft(nextAssessment);
+      await updateDriveAssessment({
+        assessment: {
+          id: nextAssessment.id,
+          subjectId: nextAssessment.subjectId,
+          title: nextAssessment.title,
+          date: nextAssessment.date,
+          folderId: savedAssessment.folderId,
+          systemPrompt: nextAssessment.systemPrompt,
+          rubricSource: nextAssessment.rubricSource,
+          gradingModel: nextAssessment.gradingModel,
+          gradingMode: nextAssessment.gradingMode,
+          sourceMaterials: nextAssessment.sourceMaterials ?? [],
+          createdAt: nextAssessment.createdAt,
+        },
+        rubric,
+        examples,
+      });
+      setMessage("문제/채점기준표 파일을 Drive에 저장했습니다.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "첨부 파일 저장에 실패했습니다.");
+    } finally {
+      setUploadingSource(false);
+    }
+  }
+
+  async function uploadExampleAttachments(
+    exampleId: string,
+    files: Array<{ name: string; dataUrl: string }>,
+  ): Promise<DriveRef[]> {
+    const savedAssessment = await persistAssessment(false);
+    if (!savedAssessment?.folderId) {
+      throw new Error("Drive 평가 폴더가 필요합니다. Google Drive 연결을 먼저 확인해 주세요.");
+    }
+    const uploaded = await uploadAssessmentFiles({
+      assessmentFolderId: savedAssessment.folderId,
+      kind: "example",
+      exampleId,
+      files,
+    });
+    setMessage("예시답안 첨부 파일을 Drive에 저장했습니다. 변경 내용을 저장해 주세요.");
+    return uploaded.files;
   }
 
   async function handleExtractRubric() {
     if (!assessment?.systemPrompt.trim()) {
-      setError("시스템 프롬프트를 먼저 입력하세요.");
+      setError("시스템 프롬프트를 먼저 입력해 주세요.");
       return;
     }
     setExtracting(true);
@@ -148,9 +240,9 @@ export default function AssessmentEditPage({
       const result = await extractRubric(assessment.systemPrompt);
       setRubric(result);
       patchAssessment({ rubricSource: "extracted-from-prompt" });
-      setMessage("시스템 프롬프트에서 루브릭을 추출했습니다. 확인 후 저장하세요.");
+      setMessage("시스템 프롬프트에서 루브릭을 추출했습니다. 확인 후 저장해 주세요.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "루브릭 추출 실패");
+      setError(err instanceof Error ? err.message : "루브릭 추출에 실패했습니다.");
     } finally {
       setExtracting(false);
     }
@@ -159,27 +251,29 @@ export default function AssessmentEditPage({
   if (!assessment) {
     return (
       <main className="mx-auto max-w-5xl px-5 py-8">
-        <AppHeader title="회차 설정" backHref={`/subjects/${params.subjectId}/assessments`} />
+        <AppHeader title="평가 설정" backHref={`/subjects/${params.subjectId}/assessments`} />
         <p className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          회차를 찾을 수 없습니다.
+          평가를 찾을 수 없습니다.
         </p>
       </main>
     );
   }
 
+  const sourceMaterials = assessment.sourceMaterials ?? [];
+
   return (
     <main className="mx-auto max-w-5xl px-5 py-8">
       <AppHeader
-        title="회차 설정"
+        title="평가 설정"
         backHref={`/subjects/${params.subjectId}/assessments`}
-        backLabel="회차 목록"
+        backLabel="평가 목록"
       />
 
       <div className="space-y-5">
         <section className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
-              <span className="text-sm font-medium text-slate-700">회차 이름</span>
+              <span className="text-sm font-medium text-slate-700">평가 이름</span>
               <input
                 value={assessment.title}
                 onChange={(event) => patchAssessment({ title: event.target.value })}
@@ -231,11 +325,54 @@ export default function AssessmentEditPage({
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5">
+          <h2 className="text-base font-semibold text-slate-900">문제와 채점기준표</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            문제지, 채점기준표, 배점표를 이미지나 PDF로 첨부하면 AI가 채점할 때 함께 분석합니다.
+          </p>
+          <input
+            type="file"
+            multiple
+            accept="image/*,application/pdf"
+            onChange={(event) => void handleSourceUpload(event.target.files)}
+            disabled={uploadingSource}
+            className="mt-4 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700"
+          />
+          {sourceMaterials.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {sourceMaterials.map((file) => (
+                <li
+                  key={file.fileId}
+                  className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600"
+                >
+                  <span className="truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextAssessment = {
+                        ...assessment,
+                        sourceMaterials: sourceMaterials.filter(
+                          (item) => item.fileId !== file.fileId,
+                        ),
+                      };
+                      setAssessment(nextAssessment);
+                      saveLocalDraft(nextAssessment);
+                    }}
+                    className="ml-3 shrink-0 text-xs font-medium text-red-600"
+                  >
+                    제거
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">시스템 프롬프트</h2>
               <p className="mt-1 text-sm text-slate-500">
-                루브릭을 따로 넣지 않아도 여기에서 채점 기준을 추출할 수 있습니다.
+                선택사항입니다. 루브릭을 따로 넣지 않아도 여기에서 채점 기준을 추출할 수 있습니다.
               </p>
             </div>
             <button
@@ -263,7 +400,11 @@ export default function AssessmentEditPage({
 
         <section>
           <h2 className="mb-3 text-base font-semibold text-slate-900">예시답안</h2>
-          <ExamplesEditor examples={examples} onChange={setExamples} />
+          <ExamplesEditor
+            examples={examples}
+            onChange={setExamples}
+            onUploadAttachments={uploadExampleAttachments}
+          />
         </section>
       </div>
 

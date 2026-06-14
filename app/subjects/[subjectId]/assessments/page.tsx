@@ -38,6 +38,7 @@ export default function AssessmentsPage({
           rubricSource: "structured",
           gradingModel: "",
           gradingMode: "text-only",
+          sourceMaterials: [],
           createdAt: item.createdAt,
         }));
         saveStore({ ...local, assessments: [...nextAssessments, ...otherAssessments] });
@@ -67,6 +68,7 @@ export default function AssessmentsPage({
       rubricSource: "structured",
       gradingModel: "",
       gradingMode: "text-only",
+      sourceMaterials: [],
       createdAt: Date.now(),
     };
     const nextAssessments = [assessment, ...store.assessments];

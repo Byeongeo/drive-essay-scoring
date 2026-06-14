@@ -57,6 +57,7 @@ export interface Assessment {
   rubricSource: RubricSource;
   gradingModel: string;
   gradingMode?: GradingMode;
+  sourceMaterials?: DriveRef[];
   createdAt: Millis;
 }
 
@@ -173,6 +174,13 @@ export interface GradeInput {
   rubric: Rubric;
   examples: ScoringExample[];
   systemPrompt: string;
+  sourceMaterials?: Array<{ base64: string; mimeType: string; name: string }>;
+  exampleMaterials?: Array<{
+    exampleId: string;
+    base64: string;
+    mimeType: string;
+    name: string;
+  }>;
   confirmedAnswerText: string;
   visualElements: VisualElement[];
   answerImages: Array<{ base64: string; mimeType: string; name: string }>;

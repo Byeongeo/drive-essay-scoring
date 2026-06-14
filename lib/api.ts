@@ -14,6 +14,7 @@ import type {
   ScoringExample,
   SubjectIndexItem,
   GradingMode,
+  DriveRef,
 } from "./types";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -147,6 +148,15 @@ export function updateDriveAssessment(body: {
   examples: ScoringExample[];
 }): Promise<{ ok: boolean }> {
   return patchJson<{ ok: boolean }>("/api/drive/assessments", body);
+}
+
+export function uploadAssessmentFiles(body: {
+  assessmentFolderId: string;
+  kind: "source" | "example";
+  exampleId?: string;
+  files: Array<{ name: string; dataUrl: string }>;
+}): Promise<{ files: DriveRef[] }> {
+  return postJson<{ files: DriveRef[] }>("/api/drive/assessment-files", body);
 }
 
 export function saveClassUploadToDrive(body: {
