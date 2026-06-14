@@ -107,11 +107,12 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash
+APP_ACCESS_PASSWORD=
 ```
 
 주의:
 
-- `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET`, `GEMINI_API_KEY`는 비밀값입니다.
+- `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET`, `GEMINI_API_KEY`, `APP_ACCESS_PASSWORD`는 비밀값입니다.
 - GitHub에 올리면 안 됩니다.
 - USB로 옮길 때도 다른 사람에게 전달하지 않도록 주의해야 합니다.
 - 로컬 개발용 `.env.local` 파일이 있다면 개인 보관용으로만 옮기세요.
@@ -221,4 +222,3 @@ npm run build
 - 학생별 채점 이력 보기 강화
 - 한 반 전체를 순서대로 채점하는 다음/이전 학생 이동 버튼 추가
 - 연수용 샘플 평가 자료와 샘플 답안 포함
-

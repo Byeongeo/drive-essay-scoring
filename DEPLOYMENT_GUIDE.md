@@ -73,13 +73,25 @@ NEXTAUTH_SECRET=아무도모르는아주긴랜덤문자열
 NEXTAUTH_URL=https://내프로젝트명.vercel.app
 ```
 
-## 6. Deploy
+## 6. 앱 접속 비밀번호
+
+개인 Vercel 주소가 외부에 알려져도 아무나 앱과 AI API를 사용하지 못하도록 접속 비밀번호를 설정합니다.
+
+Vercel Environment Variables에 추가합니다.
+
+```text
+APP_ACCESS_PASSWORD=본인만아는접속비밀번호
+```
+
+이 값을 설정하면 앱에 접속할 때 비밀번호 입력 화면이 먼저 열립니다.
+
+## 7. Deploy
 
 환경변수를 모두 입력한 뒤 Vercel에서 Deploy를 누릅니다.
 
 배포가 끝나면 앱 주소로 접속합니다.
 
-## 7. 설정 점검
+## 8. 설정 점검
 
 앱에서 `/setup`으로 이동합니다.
 
@@ -90,8 +102,9 @@ NEXTAUTH_URL=https://내프로젝트명.vercel.app
 - `GOOGLE_CLIENT_SECRET`
 - `NEXTAUTH_SECRET`
 - `NEXTAUTH_URL`
+- `APP_ACCESS_PASSWORD`
 
-## 8. Google Drive 연결
+## 9. Google Drive 연결
 
 첫 화면에서 `Google Drive 연결`을 누릅니다.
 

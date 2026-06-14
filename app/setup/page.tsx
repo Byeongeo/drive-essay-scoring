@@ -10,6 +10,7 @@ interface Health {
   googleClientSecret: boolean;
   nextAuthSecret: boolean;
   nextAuthUrl: string | null;
+  appAccessPassword: boolean;
   model: string;
 }
 
@@ -62,7 +63,8 @@ export default function SetupPage() {
       health.googleClientId &&
       health.googleClientSecret &&
       health.nextAuthSecret &&
-      Boolean(health.nextAuthUrl)
+      Boolean(health.nextAuthUrl) &&
+      health.appAccessPassword
     : false;
 
   return (
@@ -106,6 +108,11 @@ export default function SetupPage() {
               label="NEXTAUTH_URL"
               ok={Boolean(health.nextAuthUrl)}
               help={health.nextAuthUrl || "로컬은 http://localhost:3000, 배포 후에는 Vercel 주소를 넣습니다."}
+            />
+            <StatusRow
+              label="APP_ACCESS_PASSWORD"
+              ok={health.appAccessPassword}
+              help="개인 앱 접속 비밀번호입니다. 설정하면 비밀번호 확인 전에는 앱과 AI API를 사용할 수 없습니다."
             />
             <div className="border-t border-slate-100 px-4 py-3">
               <p className="font-medium text-slate-900">기본 Gemini 모델</p>

@@ -30,7 +30,10 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://localhost:3000
+APP_ACCESS_PASSWORD=
 ```
+
+`APP_ACCESS_PASSWORD`를 설정하면 앱 첫 화면 전에 비밀번호 입력 화면이 먼저 열립니다. 개인 Vercel 주소가 외부에 알려져도 이 비밀번호를 모르면 앱 화면과 AI API를 사용할 수 없습니다.
 
 `GEMINI_MODEL`은 OCR, 루브릭 추출, 이미지 포함 채점에 쓰는 기본 모델입니다. 텍스트 채점 모델은 평가 설정 화면에서 `Gemini 3.1 Flash-Lite`, `Gemini 3.5 Flash`, `Gemini 3.1 Pro` 중 선택합니다.
 
