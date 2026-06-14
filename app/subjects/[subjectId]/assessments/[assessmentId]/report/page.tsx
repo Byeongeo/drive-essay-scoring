@@ -25,6 +25,29 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
+function formatStatus(student: StudentIndexItem) {
+  return student.finalGrading || student.status === "final-saved" ? "채점 완료" : "검수";
+}
+
+function formatScoreDetails(student: StudentIndexItem) {
+  const final = student.finalGrading;
+  if (!final) return "";
+
+  return final.scores
+    .map((score) => {
+      const maxScore = typeof score.maxScore === "number" ? `/${score.maxScore}` : "";
+      const reason = score.reason ? ` - ${score.reason}` : "";
+      return `${score.criterionName}: ${score.score}${maxScore}${reason}`;
+    })
+    .join("\n");
+}
+
+function formatConfirmedAt(student: StudentIndexItem) {
+  const confirmedAt = student.finalGrading?.confirmedAt;
+  if (!confirmedAt) return "";
+  return new Date(confirmedAt).toLocaleString("ko-KR");
+}
+
 export default function ReportPage({
   params,
 }: {
@@ -41,6 +64,7 @@ export default function ReportPage({
     setClasses(store.classIndexes[params.assessmentId] ?? []);
     const assessment = store.assessments.find((item) => item.id === params.assessmentId);
     setAssessmentTitle(assessment?.title ?? "평가 회차");
+
     async function loadDrive() {
       if (!assessment?.folderId) return;
       setLoadingDrive(true);
@@ -48,13 +72,16 @@ export default function ReportPage({
         const driveClasses = await loadDriveReport(assessment.folderId);
         if (!active) return;
         setClasses(driveClasses);
-        setMessage("Drive의 final-grading.json을 반영했습니다.");
+        setMessage("Drive에 저장된 최종 채점 결과를 반영했습니다.");
       } catch {
-        if (active) setMessage("Drive 리포트를 불러오지 못해 브라우저 임시 데이터를 표시합니다.");
+        if (active) {
+          setMessage("Drive 리포트를 불러오지 못해 브라우저 임시 데이터를 표시합니다.");
+        }
       } finally {
         if (active) setLoadingDrive(false);
       }
     }
+
     void loadDrive();
     return () => {
       active = false;
@@ -73,24 +100,46 @@ export default function ReportPage({
     [classes],
   );
 
-  const doneStudents = students.filter((student) => student.status === "final-saved");
+  const doneStudents = students.filter(
+    (student) => student.finalGrading || student.status === "final-saved",
+  );
   const average =
     doneStudents.length === 0
       ? 0
-      : doneStudents.reduce((sum, student) => sum + (student.totalScore ?? 0), 0) /
-        doneStudents.length;
+      : doneStudents.reduce(
+          (sum, student) => sum + (student.finalGrading?.totalScore ?? student.totalScore ?? 0),
+          0,
+        ) / doneStudents.length;
 
   function exportCsv() {
     const rows = [
-      ["학년", "반", "번호", "이름", "상태", "총점"],
-      ...students.map((student: StudentIndexItem) => [
-        String(student.grade),
-        String(student.classNo),
-        String(student.studentNo),
-        student.name,
-        student.status,
-        String(student.totalScore ?? ""),
-      ]),
+      [
+        "학년",
+        "반",
+        "번호",
+        "이름",
+        "상태",
+        "총점",
+        "교사 최종 채점표",
+        "교사 종합 채점 근거",
+        "교사 최종 피드백",
+        "확정 저장 시각",
+      ],
+      ...students.map((student) => {
+        const final = student.finalGrading;
+        return [
+          String(student.grade),
+          String(student.classNo),
+          String(student.studentNo),
+          student.name,
+          formatStatus(student),
+          final ? String(final.totalScore) : "",
+          formatScoreDetails(student),
+          final?.overallReason ?? "",
+          final?.feedback ?? "",
+          formatConfirmedAt(student),
+        ];
+      }),
     ];
     downloadCsv(`${assessmentTitle}-리포트.csv`, rows);
   }
@@ -109,11 +158,11 @@ export default function ReportPage({
           <p className="mt-2 text-2xl font-bold text-slate-950">{students.length}</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <p className="text-sm text-slate-500">최종 저장</p>
+          <p className="text-sm text-slate-500">채점 완료</p>
           <p className="mt-2 text-2xl font-bold text-slate-950">{doneStudents.length}</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <p className="text-sm text-slate-500">미완료</p>
+          <p className="text-sm text-slate-500">검수 필요</p>
           <p className="mt-2 text-2xl font-bold text-slate-950">
             {Math.max(0, students.length - doneStudents.length)}
           </p>
@@ -126,7 +175,7 @@ export default function ReportPage({
 
       {(message || loadingDrive) && (
         <p className="mt-4 text-sm text-slate-600">
-          {loadingDrive ? "Drive 리포트 불러오는 중" : message}
+          {loadingDrive ? "Drive 리포트를 불러오는 중입니다." : message}
         </p>
       )}
 
@@ -166,8 +215,10 @@ export default function ReportPage({
                   <td className="px-3 py-2">{student.classNo}</td>
                   <td className="px-3 py-2">{student.studentNo}</td>
                   <td className="px-3 py-2">{student.name || "이름 없음"}</td>
-                  <td className="px-3 py-2">{student.status}</td>
-                  <td className="px-3 py-2 text-right">{student.totalScore ?? ""}</td>
+                  <td className="px-3 py-2">{formatStatus(student)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {student.finalGrading?.totalScore ?? student.totalScore ?? ""}
+                  </td>
                 </tr>
               ))
             )}

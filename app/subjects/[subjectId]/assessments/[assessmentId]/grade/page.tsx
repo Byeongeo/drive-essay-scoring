@@ -495,9 +495,56 @@ export default function GradePage({
         backLabel="평가 목록"
       />
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(680px,1.1fr)_minmax(560px,0.9fr)]">
+      <div className="grid gap-5 xl:grid-cols-[190px_minmax(520px,1fr)_minmax(520px,0.95fr)]">
+        <aside className="hidden xl:block">
+          <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-auto border-r border-slate-200 bg-white">
+            {students.length === 0 ? (
+              <p className="px-3 py-4 text-sm text-slate-500">저장된 학생이 없습니다.</p>
+            ) : (
+              students.map((student) => {
+                const selected = student.folderId === selectedStudentFolderId;
+                const completed = student.status === "final-saved";
+                return (
+                  <div
+                    key={student.folderId}
+                    className={`flex items-center gap-2 px-2 py-2 text-sm ${
+                      selected ? "bg-blue-50" : "bg-white"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => selectStudent(student.folderId)}
+                      className="min-w-0 flex-1 truncate text-left text-slate-900"
+                      title={studentLabel(student)}
+                    >
+                      {studentLabel(student)}
+                    </button>
+                    <span
+                      className={
+                        completed
+                          ? "shrink-0 text-green-700"
+                          : "shrink-0 rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800"
+                      }
+                    >
+                      {completed ? "✓" : "검수"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteStudent(student)}
+                      disabled={deletingStudentId === student.folderId}
+                      className="shrink-0 px-1 text-lg leading-none text-slate-300 hover:text-red-600 disabled:opacity-40"
+                      title="학생 삭제"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
         <section className="space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-5 xl:hidden">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
               <label className="block flex-1">
                 <span className="text-sm font-medium text-slate-700">학생 선택</span>
@@ -644,8 +691,8 @@ export default function GradePage({
             <textarea
               value={answerText}
               onChange={(event) => setAnswerText(event.target.value)}
-              rows={14}
-              className="mt-4 h-[48vh] min-h-[420px] w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+              rows={10}
+              className="mt-4 h-[32vh] min-h-[280px] w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <button
@@ -712,10 +759,13 @@ export default function GradePage({
                   disabled={!aiResult}
                   className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  결과 전체 가져오기
+                  AI 결과 다시 반영
                 </button>
               </div>
             </div>
+            <p className="mt-2 text-xs text-slate-500">
+              AI 채점 결과는 채점표에 자동으로 들어갑니다. 수정하다가 AI 초안으로 되돌리고 싶을 때만 이 버튼을 사용합니다.
+            </p>
             <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block text-sm font-medium text-slate-700">채점 방식</label>
               <select
@@ -831,8 +881,8 @@ export default function GradePage({
                         next[index] = { ...score, reason: event.target.value };
                         setScores(next);
                       }}
-                      rows={6}
-                      className="mt-3 min-h-40 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+                      rows={4}
+                      className="mt-3 h-28 w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
                     />
                   </div>
                 ))
@@ -844,8 +894,8 @@ export default function GradePage({
               <textarea
                 value={overallReason}
                 onChange={(event) => setOverallReason(event.target.value)}
-                rows={8}
-                className="mt-1 min-h-56 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+                rows={5}
+                className="mt-1 h-40 w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
               />
             </label>
 
@@ -854,8 +904,8 @@ export default function GradePage({
               <textarea
                 value={feedback}
                 onChange={(event) => setFeedback(event.target.value)}
-                rows={10}
-                className="mt-1 min-h-72 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
+                rows={7}
+                className="mt-1 h-48 w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
               />
             </label>
 

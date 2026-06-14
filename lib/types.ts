@@ -104,6 +104,8 @@ export interface StudentIndexItem {
   pageRefs?: DriveRef[];
   status: StudentWorkStatus;
   totalScore?: number;
+  aiGrading?: GradingSnapshot | null;
+  finalGrading?: GradingRecord["finalGrading"] | null;
   updatedAt: Millis;
 }
 

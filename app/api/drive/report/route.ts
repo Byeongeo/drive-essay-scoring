@@ -38,6 +38,8 @@ export async function GET(req: Request) {
               ...student,
               status: grading.finalGrading ? "final-saved" : student.status,
               totalScore: finalScore ?? student.totalScore,
+              aiGrading: grading.aiGrading,
+              finalGrading: grading.finalGrading,
             };
           }),
         ),
