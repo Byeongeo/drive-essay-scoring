@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PasteZone from "@/components/PasteZone";
 import type { DriveRef, ScoringExample } from "@/lib/types";
 
 function readFileAsDataUrl(file: File): Promise<{ name: string; dataUrl: string }> {
@@ -43,11 +44,11 @@ export default function ExamplesEditor({
     ]);
   }
 
-  async function uploadFiles(example: ScoringExample, index: number, files: FileList | null) {
-    if (!files?.length || !onUploadAttachments) return;
+  async function uploadFiles(example: ScoringExample, index: number, files: File[]) {
+    if (!files.length || !onUploadAttachments) return;
     setUploadingExampleId(example.id);
     try {
-      const payload = await Promise.all(Array.from(files).map(readFileAsDataUrl));
+      const payload = await Promise.all(files.map(readFileAsDataUrl));
       const uploaded = await onUploadAttachments(example.id, payload);
       const next = [...examples];
       next[index] = {
@@ -110,9 +111,14 @@ export default function ExamplesEditor({
               type="file"
               multiple
               accept="image/*,application/pdf"
-              onChange={(event) => void uploadFiles(example, index, event.target.files)}
+              onChange={(event) => void uploadFiles(example, index, Array.from(event.target.files ?? []))}
               disabled={!onUploadAttachments || uploadingExampleId === example.id}
               className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700"
+            />
+            <PasteZone
+              onFiles={(files) => void uploadFiles(example, index, files)}
+              disabled={!onUploadAttachments || uploadingExampleId === example.id}
+              label="또는 여기를 클릭한 뒤 Ctrl+V — 예시답안 캡처(프린트스크린)·이미지·PDF 붙여넣기"
             />
             {!onUploadAttachments && (
               <p className="mt-1 text-xs text-slate-500">

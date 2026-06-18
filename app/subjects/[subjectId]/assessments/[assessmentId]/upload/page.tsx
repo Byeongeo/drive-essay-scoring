@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
-import { classifyPage, createClassSession, saveClassStudent } from "@/lib/api";
+import {
+  classifyPage,
+  createClassSession,
+  interpretStudentFromDrive,
+  saveClassStudent,
+  saveStudentWorkToDrive,
+} from "@/lib/api";
 import { loadStore, saveStore } from "@/lib/client-store";
 import { dataUrlToBase64, renderPdfToImages, type RenderedPage } from "@/lib/pdf";
 import { deriveStudentGroups } from "@/lib/student-grouping";
@@ -51,6 +57,9 @@ export default function UploadPage({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [className, setClassName] = useState("1반");
+  const [classGrade, setClassGrade] = useState("");
+  const [classNo, setClassNo] = useState("");
+  const [autoOcr, setAutoOcr] = useState(false);
   const [savingDrive, setSavingDrive] = useState(false);
   const [saveProgress, setSaveProgress] = useState("");
   const [saveStates, setSaveStates] = useState<Record<number, SaveState>>({});
@@ -78,12 +87,14 @@ export default function UploadPage({
   }
 
   function buildPreparedGroups(): PreparedGroup[] {
+    const gradeNum = Number(classGrade) || 0;
+    const classNoNum = Number(classNo) || 0;
     return groups.map((group) => {
       const editable = infoFor(group.startPageIndex);
       const header: HeaderExtraction = {
         hasHeader: true,
-        grade: Number(editable.grade) || 0,
-        classNo: Number(editable.classNo) || 0,
+        grade: gradeNum || Number(editable.grade) || 0,
+        classNo: classNoNum || Number(editable.classNo) || 0,
         studentNo: Number(editable.studentNo) || 0,
         name: editable.name,
       };
@@ -131,11 +142,14 @@ export default function UploadPage({
     return nextSession;
   }
 
-  async function saveGroupIndexes(indexes: number[]): Promise<number> {
+  async function saveGroupIndexes(
+    indexes: number[],
+  ): Promise<{ failedCount: number; ocrFailedCount: number }> {
     const preparedGroups = buildPreparedGroups();
     const session = await ensureSaveSession(preparedGroups);
     let latestClassIndex = null;
     let failedCount = 0;
+    let ocrFailedCount = 0;
 
     for (const groupIndex of indexes) {
       setSaveStates((prev) => ({ ...prev, [groupIndex]: "saving" }));
@@ -153,6 +167,22 @@ export default function UploadPage({
         });
         if (result.classIndex) latestClassIndex = result.classIndex;
         setSaveStates((prev) => ({ ...prev, [groupIndex]: "saved" }));
+
+        if (autoOcr && result.student?.folderId) {
+          try {
+            setSaveProgress(`학생 ${groupIndex + 1}/${preparedGroups.length} OCR 해석 중`);
+            const draft = await interpretStudentFromDrive({
+              studentFolderId: result.student.folderId,
+              pageRefs: result.student.pageRefs ?? [],
+            });
+            await saveStudentWorkToDrive({
+              studentFolderId: result.student.folderId,
+              ocrDraft: draft,
+            });
+          } catch {
+            ocrFailedCount += 1;
+          }
+        }
       } catch (err) {
         failedCount += 1;
         setSaveStates((prev) => ({ ...prev, [groupIndex]: "failed" }));
@@ -177,7 +207,7 @@ export default function UploadPage({
         },
       });
     }
-    return failedCount;
+    return { failedCount, ocrFailedCount };
   }
 
   async function handleFile(file: File) {
@@ -210,6 +240,10 @@ export default function UploadPage({
         if (isStart) nextInfo[index] = toEditable(nextHeaders[index]);
       });
 
+      const firstHeader = nextHeaders.find((header) => header.hasHeader) ?? nextHeaders[0];
+      if (firstHeader?.grade != null) setClassGrade(String(firstHeader.grade));
+      if (firstHeader?.classNo != null) setClassNo(String(firstHeader.classNo));
+
       setHeaders(nextHeaders);
       setStarts(nextStarts);
       setInfo(nextInfo);
@@ -227,11 +261,17 @@ export default function UploadPage({
     try {
       setSaveStates({});
       setSaveErrors({});
-      const failedCount = await saveGroupIndexes(groups.map((_, index) => index));
+      const { failedCount, ocrFailedCount } = await saveGroupIndexes(
+        groups.map((_, index) => index),
+      );
       setMessage(
         failedCount
           ? "일부 학생 저장에 실패했습니다. 실패 학생만 다시 저장할 수 있습니다."
-          : "Drive에 반 폴더, 학생별 폴더, 페이지 이미지, class-index.json을 저장했습니다.",
+          : autoOcr
+            ? ocrFailedCount
+              ? `Drive 저장은 끝났지만 ${ocrFailedCount}명은 OCR 해석에 실패했습니다. 채점 화면에서 개별로 다시 실행하세요.`
+              : "Drive 저장과 AI OCR/해석까지 모두 끝냈습니다. 채점 화면에서 바로 확인·채점하세요."
+            : "Drive에 반 폴더, 학생별 폴더, 페이지 이미지, class-index.json을 저장했습니다.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Drive 저장 실패");
@@ -304,29 +344,65 @@ export default function UploadPage({
             학생 정보를 확인하세요.
           </div>
 
-          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              반 이름
+          <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-sm font-medium text-slate-700">
+                  <span className="block">학년</span>
+                  <input
+                    value={classGrade}
+                    onChange={(event) => setClassGrade(event.target.value)}
+                    inputMode="numeric"
+                    placeholder="예: 1"
+                    className="mt-1 w-20 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  <span className="block">반</span>
+                  <input
+                    value={classNo}
+                    onChange={(event) => setClassNo(event.target.value)}
+                    inputMode="numeric"
+                    placeholder="예: 3"
+                    className="mt-1 w-20 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  <span className="block">반 이름</span>
+                  <input
+                    value={className}
+                    onChange={(event) => setClassName(event.target.value)}
+                    placeholder="예: 1반"
+                    className="mt-1 w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => void saveToDrive()}
+                  disabled={savingDrive}
+                  className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {savingDrive ? "Drive 저장 중" : "이 반을 Drive에 저장"}
+                </button>
+                <button
+                  onClick={() => void retryFailed()}
+                  disabled={savingDrive || !Object.values(saveStates).some((state) => state === "failed")}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  실패 학생만 다시 저장
+                </button>
+              </div>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
               <input
-                value={className}
-                onChange={(event) => setClassName(event.target.value)}
-                className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="checkbox"
+                checked={autoOcr}
+                onChange={(event) => setAutoOcr(event.target.checked)}
+                className="h-4 w-4"
               />
+              저장하면서 AI OCR/해석도 함께 실행 (학생 수가 많으면 시간이 더 걸립니다)
             </label>
-            <button
-              onClick={() => void saveToDrive()}
-              disabled={savingDrive}
-              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {savingDrive ? "Drive 저장 중" : "이 반을 Drive에 저장"}
-            </button>
-            <button
-              onClick={() => void retryFailed()}
-              disabled={savingDrive || !Object.values(saveStates).some((state) => state === "failed")}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              실패 학생만 다시 저장
-            </button>
           </div>
 
           {(message || error) && (
@@ -369,19 +445,7 @@ export default function UploadPage({
                     <p className="mb-3 text-sm text-red-600">{saveErrors[groupIndex]}</p>
                   )}
 
-                  <div className="mb-4 grid gap-2 sm:grid-cols-4">
-                    <input
-                      value={editable.grade}
-                      onChange={(event) => patchInfo(group.startPageIndex, { grade: event.target.value })}
-                      placeholder="학년"
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    />
-                    <input
-                      value={editable.classNo}
-                      onChange={(event) => patchInfo(group.startPageIndex, { classNo: event.target.value })}
-                      placeholder="반"
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    />
+                  <div className="mb-4 grid gap-2 sm:grid-cols-2">
                     <input
                       value={editable.studentNo}
                       onChange={(event) => patchInfo(group.startPageIndex, { studentNo: event.target.value })}

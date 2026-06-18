@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import ExamplesEditor from "@/components/ExamplesEditor";
+import PasteZone from "@/components/PasteZone";
 import RubricBuilder from "@/components/RubricBuilder";
 import {
   extractRubric,
@@ -163,8 +164,8 @@ export default function AssessmentEditPage({
     }
   }
 
-  async function handleSourceUpload(files: FileList | null) {
-    if (!files?.length || !assessment) return;
+  async function handleSourceFiles(files: File[]) {
+    if (!files.length || !assessment) return;
     setUploadingSource(true);
     setError(null);
     setMessage(null);
@@ -173,7 +174,7 @@ export default function AssessmentEditPage({
       if (!savedAssessment?.folderId) {
         throw new Error("Drive 평가 폴더가 필요합니다. Google Drive 연결을 먼저 확인해 주세요.");
       }
-      const payload = await Promise.all(Array.from(files).map(readFileAsDataUrl));
+      const payload = await Promise.all(files.map(readFileAsDataUrl));
       const uploaded = await uploadAssessmentFiles({
         assessmentFolderId: savedAssessment.folderId,
         kind: "source",
@@ -333,9 +334,14 @@ export default function AssessmentEditPage({
             type="file"
             multiple
             accept="image/*,application/pdf"
-            onChange={(event) => void handleSourceUpload(event.target.files)}
+            onChange={(event) => void handleSourceFiles(Array.from(event.target.files ?? []))}
             disabled={uploadingSource}
             className="mt-4 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700"
+          />
+          <PasteZone
+            onFiles={(files) => void handleSourceFiles(files)}
+            disabled={uploadingSource}
+            label="또는 여기를 클릭한 뒤 Ctrl+V — 문제·채점기준표 캡처(프린트스크린)·이미지·PDF 붙여넣기"
           />
           {sourceMaterials.length > 0 && (
             <ul className="mt-3 space-y-2">

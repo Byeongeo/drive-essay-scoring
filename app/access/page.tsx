@@ -9,6 +9,7 @@ function AccessForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -20,7 +21,7 @@ function AccessForm() {
       const res = await fetch("/api/access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, remember }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "접속 확인에 실패했습니다.");
@@ -44,6 +45,20 @@ function AccessForm() {
           autoFocus
           className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-100"
         />
+      </label>
+      <label className="flex items-start gap-2 text-sm text-slate-600">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(event) => setRemember(event.target.checked)}
+          className="mt-0.5 h-4 w-4"
+        />
+        <span>
+          이 컴퓨터 기억하기 (개인 PC에서만 — 30일 동안 다시 묻지 않음)
+          <span className="mt-0.5 block text-xs text-slate-400">
+            체크하지 않으면 창을 닫을 때마다 비밀번호를 다시 입력합니다. 공용·학교 PC에서는 끄세요.
+          </span>
+        </span>
       </label>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button
