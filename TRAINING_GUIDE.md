@@ -1,5 +1,7 @@
 # 연수 운영 가이드
 
+> 연수자(선생님)가 **계정 만들기부터 배포·사용까지 혼자 따라 할 수 있는** 클릭 단위 문서는 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) 입니다. 이 문서는 **강사의 연수 진행** 관점 요약입니다.
+
 ## 1부: 강사 데모
 
 강사는 미리 배포한 Vercel 앱으로 전체 흐름을 보여준다.
@@ -33,20 +35,24 @@
 ## 교사가 입력해야 하는 환경변수
 
 ```text
-GEMINI_API_KEY
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-NEXTAUTH_SECRET
-NEXTAUTH_URL
+GEMINI_API_KEY        AI 채점/OCR 키 (Google AI Studio)
+GEMINI_MODEL          gemini-3.5-flash (그대로)
+GOOGLE_CLIENT_ID      Google Drive 연결 (OAuth)
+GOOGLE_CLIENT_SECRET  Google Drive 연결 (OAuth)
+NEXTAUTH_SECRET       긴 랜덤 문자열
+NEXTAUTH_URL          배포된 Vercel 앱 주소 (끝 슬래시 없이)
+APP_ACCESS_PASSWORD   앱 접속 비밀번호 (각자 정함)
 ```
 
 ## 연수에서 강조할 점
 
-- 앱은 AI 채점 결과를 초안으로 만든다.
-- 최종 점수와 피드백은 교사가 확인하고 저장한다.
-- 학생 답안은 교사 개인 Google Drive에 저장된다.
+- 앱은 AI 채점 결과를 초안으로 만든다. 최종 점수와 피드백은 교사가 확인하고 저장한다.
+- 학생 답안은 교사 개인 Google Drive에 저장된다. 각자 자기 앱·자기 드라이브라 데이터가 분리된다.
 - Firebase 설정은 하지 않는다.
 - 한 반씩 PDF를 올리고, 반별로 처리 상태를 확인한다.
+- **Fork한 저장소는 Public으로 둘 것.** Private이면 Vercel 배포가 'Blocked'로 막힌다(가장 흔한 사고).
+- **OAuth 동의 화면은 연수 당일엔 '테스트 사용자 추가'로 충분하지만, 학기 내내 쓰려면 '앱 게시(Production)'로 전환**하도록 안내한다. 테스트 상태로 두면 약 7일 뒤 드라이브 연결이 풀린다. 이 앱은 drive.file 범위만 써서 게시해도 구글 심사가 없다.
+- 배포 주소·NEXTAUTH_URL·OAuth 리디렉션 URI 세 가지는 글자까지 동일해야 한다.
 
 ## 현재 앱에서 시연 가능한 것
 

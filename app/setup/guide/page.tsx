@@ -3,8 +3,12 @@ import AppHeader from "@/components/AppHeader";
 
 const steps = [
   {
+    title: "계정 준비 (구글 · GitHub · Vercel)",
+    body: "구글 계정으로 AI 키와 드라이브를 쓰고, GitHub로 앱 코드를 복사하고, 그 GitHub로 Vercel에 가입합니다. 모두 무료입니다.",
+  },
+  {
     title: "GitHub 저장소 Fork",
-    body: "강사가 제공한 원본 저장소를 본인 GitHub 계정으로 Fork합니다.",
+    body: "강사가 제공한 원본 저장소를 본인 GitHub 계정으로 Fork합니다. 저장소는 반드시 Public으로 둡니다. Private이면 Vercel 배포가 'Blocked'로 차단됩니다.",
   },
   {
     title: "Vercel Import",
@@ -19,16 +23,20 @@ const steps = [
     body: "Google Cloud Console에서 프로젝트를 만들고 Google Drive API를 사용 설정합니다.",
   },
   {
-    title: "OAuth 클라이언트 생성",
-    body: "웹 애플리케이션 OAuth 클라이언트를 만들고 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET을 Vercel에 입력합니다.",
+    title: "OAuth 동의 화면 + 클라이언트 생성",
+    body: "외부(External) 동의 화면을 만들고 '테스트 사용자'에 내 구글 이메일을 추가합니다. 이어 웹 애플리케이션 OAuth 클라이언트를 만들어 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET을 Vercel에 입력합니다.",
   },
   {
     title: "리디렉션 URI 등록",
-    body: "승인된 리디렉션 URI에 https://내프로젝트.vercel.app/api/auth/callback/google 을 등록합니다.",
+    body: "승인된 리디렉션 URI에 https://내프로젝트.vercel.app/api/auth/callback/google 을 등록합니다. 배포 주소와 글자까지 똑같아야 합니다.",
   },
   {
-    title: "NEXTAUTH 설정",
-    body: "NEXTAUTH_SECRET에는 긴 랜덤 문자열을 넣고, NEXTAUTH_URL에는 Vercel 앱 주소를 넣습니다.",
+    title: "NEXTAUTH 설정 후 Redeploy",
+    body: "NEXTAUTH_SECRET에는 긴 랜덤 문자열을, NEXTAUTH_URL에는 Vercel 앱 주소를 끝 슬래시 없이 넣습니다. 환경변수를 바꾼 뒤에는 반드시 Redeploy 합니다.",
+  },
+  {
+    title: "실사용 시 앱 게시(Production)",
+    body: "동의 화면을 '테스트' 상태로 두면 약 7일마다 드라이브 연결이 풀립니다. 학기 내내 쓰려면 대상(Audience)에서 '앱 게시'로 전환하세요. drive.file 범위만 쓰므로 별도 심사가 없습니다.",
   },
   {
     title: "설정 점검",
@@ -48,10 +56,12 @@ export default function SetupGuidePage() {
             <tbody>
               {[
                 ["GEMINI_API_KEY", "AI 채점과 OCR/이미지 해석"],
+                ["GEMINI_MODEL", "기본 모델(gemini-3.5-flash) — 그대로 입력"],
                 ["GOOGLE_CLIENT_ID", "Google Drive 연결"],
                 ["GOOGLE_CLIENT_SECRET", "Google Drive 연결"],
-                ["NEXTAUTH_SECRET", "로그인 세션 보호"],
-                ["NEXTAUTH_URL", "배포된 앱 주소"],
+                ["NEXTAUTH_SECRET", "로그인 세션 보호 — 긴 랜덤 문자열"],
+                ["NEXTAUTH_URL", "배포된 앱 주소(끝 슬래시 없이)"],
+                ["APP_ACCESS_PASSWORD", "앱 접속 비밀번호 — 내가 정함"],
               ].map(([key, desc]) => (
                 <tr key={key} className="border-t border-slate-100 first:border-t-0">
                   <td className="w-56 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-900">
@@ -82,9 +92,15 @@ export default function SetupGuidePage() {
       </section>
 
       <section className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
-        <p className="font-semibold">주의</p>
-        <p className="mt-1">
-          Vercel 배포 주소가 바뀌면 Google Cloud OAuth 리디렉션 URI와 NEXTAUTH_URL도 같은 주소로 맞춰야 합니다.
+        <p className="font-semibold">자주 막히는 곳</p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>Vercel 배포 주소가 바뀌면 Google Cloud OAuth 리디렉션 URI와 NEXTAUTH_URL도 같은 주소로 맞춰야 합니다(끝 슬래시·오타 주의).</li>
+          <li>로그인 시 "액세스 차단됨"이면 동의 화면의 테스트 사용자에 내 이메일이 빠진 것입니다.</li>
+          <li>며칠 뒤 드라이브 연결이 풀리면 동의 화면이 '테스트' 상태(7일 만료)입니다. '앱 게시'로 전환하세요.</li>
+          <li>배포가 'Blocked'이면 Fork한 저장소가 Private입니다. Public으로 바꾸세요.</li>
+        </ul>
+        <p className="mt-3">
+          처음부터 끝까지 클릭 단위 설명은 저장소의 <span className="font-medium">DEPLOYMENT_GUIDE.md</span> 문서를 참고하세요.
         </p>
       </section>
 
