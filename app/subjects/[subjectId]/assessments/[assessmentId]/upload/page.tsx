@@ -56,7 +56,6 @@ export default function UploadPage({
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [className, setClassName] = useState("1반");
   const [classGrade, setClassGrade] = useState("");
   const [classNo, setClassNo] = useState("");
   const [autoOcr, setAutoOcr] = useState(false);
@@ -113,6 +112,18 @@ export default function UploadPage({
     const store = loadStore();
     const assessment = store.assessments.find((item) => item.id === params.assessmentId);
     if (!assessment) throw new Error("회차 정보를 찾을 수 없습니다.");
+
+    // 반 폴더 이름은 학년·반에서 자동 생성한다(예: "1학년 7반"). 별도 '반 이름' 입력은 없앴다.
+    const grade = preparedGroups[0]?.header.grade ?? 0;
+    const classNoValue = preparedGroups[0]?.header.classNo ?? 0;
+    const className =
+      grade && classNoValue
+        ? `${grade}학년 ${classNoValue}반`
+        : classNoValue
+          ? `${classNoValue}반`
+          : grade
+            ? `${grade}학년`
+            : "반";
 
     const session = await createClassSession({
       subjectId: params.subjectId,
@@ -365,15 +376,6 @@ export default function UploadPage({
                     inputMode="numeric"
                     placeholder="예: 3"
                     className="mt-1 w-20 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  <span className="block">반 이름</span>
-                  <input
-                    value={className}
-                    onChange={(event) => setClassName(event.target.value)}
-                    placeholder="예: 1반"
-                    className="mt-1 w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
               </div>
