@@ -102,6 +102,8 @@ export async function extractHeaderFromPage(
       config: {
         responseMimeType: "application/json",
         responseSchema: headerSchema,
+        // 머리글 추출도 추론이 필요 없는 단순 인식 → 사고를 꺼 분류 속도를 크게 높인다.
+        thinkingConfig: { thinkingBudget: 0 },
       },
     }),
   );
@@ -235,6 +237,11 @@ export async function interpretStudentAnswer(
         "【추측 금지】또렷이 판독되는 글자만 옮겨라. 조금이라도 불확실한 글자·숫자·기호·수식 일부는 " +
         "추측하거나 문맥으로 그럴듯하게 채워 넣지 말고 정확히 `****`로 표시하라. " +
         "단, '또렷이 읽히지만 맞춤법이 틀린 글자'는 ****가 아니라 틀린 그대로 옮겨라(글자를 못 알아보는 경우에만 ****). " +
+        "【교정부호】학생이 손으로 고친 흔적을 정확히 반영하라. " +
+        "(1) 취소선·가로줄·두 줄로 그어 지운 글자는 학생이 삭제한 것이므로 옮기지 마라(지웠는지 불확실하면 그 자리에 ****). " +
+        "(2) 삽입 부호(∨, 삽입선, 화살표, 풍선표, 줄 사이·여백에 끼워 쓴 작은 글씨)는 부호가 가리키는 위치에 그 글자를 삽입해 옮겨라. " +
+        "(3) ★가장 중요: 삽입·교정한 작은 글씨가 또렷이 안 읽히면, 문맥에 맞는 그럴듯한 단어를 절대 지어내지 마라. " +
+        "반드시 그 자리에 **** 로 표기하라. 매끄러운 문장을 만드는 것보다 '못 읽었음(****)'을 정직히 표시하는 것이 훨씬 중요하다. " +
         "수식, 도형, 그래프, 그림, 화학식은 visualElements에 설명하라. " +
         "각 `****`의 위치는 0~1 정규화 bbox로 기록하라. 페이지 참조는 아래 순서를 사용하라.\n" +
         pages.map((p, i) => `[${i}] ${p.fileId} ${p.name}`).join("\n"),
@@ -252,9 +259,13 @@ export async function interpretStudentAnswer(
       config: {
         responseMimeType: "application/json",
         responseSchema: ocrSchema,
-        // 악필 등 판독이 어려우면 모델이 같은 구절을 끝없이 반복(런어웨이)해
-        // 거대한 텍스트를 만들 수 있다. 출력 토큰을 상한해 폭주를 방지한다.
-        maxOutputTokens: 8192,
+        // ⚠️ gemini-3.5-flash 는 "사고(thinking)" 모델이라, 사고 토큰이 출력 예산을 다 써버리면
+        //    정작 JSON 출력이 잘려(finishReason=MAX_TOKENS) 파싱 실패 → text 0자가 된다.
+        //    (8192 한도일 때 사고가 ~7000~7900 토큰을 먹어 답안이 조금만 길어도 0자·매우 느림 — 실측 확인.)
+        //    OCR은 추론이 필요 없는 '받아쓰기'이므로 사고를 끄고(=속도↑), 여러 페이지 긴 답안도
+        //    담기도록 출력 한도를 넉넉히 둔다. (런어웨이는 16384 상한으로 여전히 차단.)
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 16384,
       },
     }),
   );
