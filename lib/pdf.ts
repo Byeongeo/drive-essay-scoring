@@ -9,10 +9,14 @@ export interface RenderedPage {
 
 export async function renderPdfToImages(
   file: File,
-  opts: { scale?: number; quality?: number } = {},
+  opts: { scale?: number; quality?: number; maxEdge?: number } = {},
 ): Promise<RenderedPage[]> {
-  const scale = opts.scale ?? 2;
+  const baseScale = opts.scale ?? 2;
   const quality = opts.quality ?? 0.85;
+  // 큰 스캔본(예: A4 고해상도)을 너무 큰 캔버스로 렌더하면 브라우저 렌더러가
+  // 메모리 부족으로 탭이 죽는다. 페이지의 긴 변이 maxEdge(px)를 넘지 않도록
+  // 스케일을 자동으로 낮춘다. OCR 정확도와 메모리 안정성의 절충값.
+  const maxEdge = opts.maxEdge ?? 2200;
 
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -23,6 +27,10 @@ export async function renderPdfToImages(
 
   for (let i = 1; i <= doc.numPages; i += 1) {
     const page = await doc.getPage(i);
+    const natural = page.getViewport({ scale: 1 });
+    const longestAtBase = Math.max(natural.width, natural.height) * baseScale;
+    const scale =
+      longestAtBase > maxEdge ? maxEdge / Math.max(natural.width, natural.height) : baseScale;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(viewport.width);

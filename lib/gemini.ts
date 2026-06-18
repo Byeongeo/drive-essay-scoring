@@ -31,6 +31,35 @@ function inlineImage(base64: string, mimeType: string) {
   return { inlineData: { data: base64, mimeType } };
 }
 
+/** 일시적(재시도하면 성공할 수 있는) 오류인지 판별 — 429/5xx/네트워크 등 */
+function isRetryable(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return /\b429\b|\b500\b|\b503\b|resource[_ ]?exhausted|rate.?limit|quota|unavailable|internal error|overloaded|deadline|timeout|fetch failed|network|econnreset|socket hang/.test(
+    msg,
+  );
+}
+
+/**
+ * Gemini 호출 자동 재시도 래퍼.
+ * 일시적 오류(429/5xx/네트워크)에만 지수 백오프로 최대 maxAttempts 회 재시도한다.
+ * 400 등 영구 오류는 즉시 throw(헛된 재시도 방지). 동시 접속(여러 교사·학생 일괄 채점) 시
+ * 순간적인 rate-limit·과부하 오류를 흡수한다.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= maxAttempts || !isRetryable(err)) throw err;
+      const delay = 500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 300);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 function resolveGradingModel(input: GradeInput, mode: GradeInput["gradingMode"]) {
   if (mode === "image-assisted") return DEFAULT_MODEL;
   return input.model || DEFAULT_MODEL;
@@ -54,26 +83,28 @@ export async function extractHeaderFromPage(
   mimeType = "image/jpeg",
 ): Promise<HeaderExtraction> {
   const ai = getClient();
-  const res = await ai.models.generateContent({
-    model: DEFAULT_MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text:
-              "답안지 상단 머리글에서 학년, 반, 번호, 이름을 추출하라. " +
-              "머리글이 없으면 hasHeader=false로 응답하라. 불확실하면 confidence를 낮게 주라.",
-          },
-          inlineImage(pageImageBase64, mimeType),
-        ],
+  const res = await withRetry(() =>
+    ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                "답안지 상단 머리글에서 학년, 반, 번호, 이름을 추출하라. " +
+                "머리글이 없으면 hasHeader=false로 응답하라. 불확실하면 confidence를 낮게 주라.",
+            },
+            inlineImage(pageImageBase64, mimeType),
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: headerSchema,
       },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: headerSchema,
-    },
-  });
+    }),
+  );
   return parseJson<HeaderExtraction>(res.text);
 }
 
@@ -112,26 +143,28 @@ export async function extractRubricFromPrompt(systemPrompt: string): Promise<Rub
   }
 
   const ai = getClient();
-  const res = await ai.models.generateContent({
-    model: DEFAULT_MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text:
-              "다음 교사 지시에서 채점 요소, 점수 구간, 점수별 기준을 구조화된 루브릭으로 추출하라. " +
-              "점수 기준이 모호하면 가능한 범위에서 추출하되 descriptor에 모호한 점을 명시하라.\n\n" +
-              systemPrompt,
-          },
-        ],
+  const res = await withRetry(() =>
+    ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                "다음 교사 지시에서 채점 요소, 점수 구간, 점수별 기준을 구조화된 루브릭으로 추출하라. " +
+                "점수 기준이 모호하면 가능한 범위에서 추출하되 descriptor에 모호한 점을 명시하라.\n\n" +
+                systemPrompt,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: rubricSchema,
       },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: rubricSchema,
-    },
-  });
+    }),
+  );
   return parseJson<Rubric>(res.text);
 }
 
@@ -196,8 +229,12 @@ export async function interpretStudentAnswer(
   const parts: Array<Record<string, unknown>> = [
     {
       text:
-        "학생의 수기 답안을 가능한 정확하게 텍스트화하라. " +
-        "읽기 어렵거나 확신할 수 없는 글자, 숫자, 기호, 수식 일부는 정확히 `****`로 표시하라. " +
+        "학생의 수기 답안을 손글씨 원문 그대로 텍스트화하라. " +
+        "【원문 보존】학생이 쓴 글자를 그대로 옮겨라. 맞춤법·띄어쓰기·문법 오류나 오탈자가 있어도 " +
+        "절대 고치지 말고 틀린 그대로 옮겨라(맞춤법·오탈자 개수가 채점 기준일 수 있다). " +
+        "【추측 금지】또렷이 판독되는 글자만 옮겨라. 조금이라도 불확실한 글자·숫자·기호·수식 일부는 " +
+        "추측하거나 문맥으로 그럴듯하게 채워 넣지 말고 정확히 `****`로 표시하라. " +
+        "단, '또렷이 읽히지만 맞춤법이 틀린 글자'는 ****가 아니라 틀린 그대로 옮겨라(글자를 못 알아보는 경우에만 ****). " +
         "수식, 도형, 그래프, 그림, 화학식은 visualElements에 설명하라. " +
         "각 `****`의 위치는 0~1 정규화 bbox로 기록하라. 페이지 참조는 아래 순서를 사용하라.\n" +
         pages.map((p, i) => `[${i}] ${p.fileId} ${p.name}`).join("\n"),
@@ -208,14 +245,19 @@ export async function interpretStudentAnswer(
     parts.push(inlineImage(page.base64, page.mimeType));
   }
 
-  const res = await ai.models.generateContent({
-    model: DEFAULT_MODEL,
-    contents: [{ role: "user", parts: parts as never }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: ocrSchema,
-    },
-  });
+  const res = await withRetry(() =>
+    ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: [{ role: "user", parts: parts as never }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: ocrSchema,
+        // 악필 등 판독이 어려우면 모델이 같은 구절을 끝없이 반복(런어웨이)해
+        // 거대한 텍스트를 만들 수 있다. 출력 토큰을 상한해 폭주를 방지한다.
+        maxOutputTokens: 8192,
+      },
+    }),
+  );
 
   return parseJson<OcrDraft>(res.text);
 }
@@ -336,14 +378,16 @@ export async function gradeStudentAnswer(input: GradeInput): Promise<GradingSnap
     }
   }
 
-  const res = await ai.models.generateContent({
-    model: resolveGradingModel(input, effectiveMode),
-    contents: [{ role: "user", parts: parts as never }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: gradingSchema,
-    },
-  });
+  const res = await withRetry(() =>
+    ai.models.generateContent({
+      model: resolveGradingModel(input, effectiveMode),
+      contents: [{ role: "user", parts: parts as never }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: gradingSchema,
+      },
+    }),
+  );
 
   return {
     ...parseJson<GradingSnapshot>(res.text),

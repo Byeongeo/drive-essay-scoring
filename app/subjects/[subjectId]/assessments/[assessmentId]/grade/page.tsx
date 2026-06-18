@@ -34,6 +34,83 @@ const sampleVisuals: VisualElement[] = [
   },
 ];
 
+// ⚠️ 크롬은 긴 한국어(약 1500자+)를 "편집 가능한 요소"(textarea·contentEditable)에 렌더링하면
+//    렌더러(탭)가 죽는다. 읽기 전용 div 는 길이와 무관하게 안전하다.
+//    → 보기는 항상 읽기 div, 편집기에는 짧은 "조각"(EDIT_CHUNK 이하)만 넣는다.
+const MASK = "****"; // OCR 이 불명확하다고 본 글자 표시(drive 규약: 별표 4개)
+const EDIT_CHUNK = 300; // 인라인 편집기 한 조각의 최대 글자 수(위험선의 약 1/5 — 충분히 안전)
+
+/**
+ * 텍스트를 maxLen 이하 조각들로 "정확히 분할"한다(조각을 이어붙이면 원문과 동일).
+ * 가능하면 줄바꿈·공백 경계에서 끊어 자연스럽게 나눈다.
+ */
+function chunkText(text: string, maxLen: number): string[] {
+  if (!text) return [];
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + maxLen, text.length);
+    if (end < text.length) {
+      const slice = text.slice(i, end);
+      const minCut = Math.floor(maxLen * 0.5); // 너무 잘게 쪼개지지 않도록 하한
+      const nl = slice.lastIndexOf("\n");
+      const sp = slice.lastIndexOf(" ");
+      if (nl >= minCut) end = i + nl + 1;
+      else if (sp >= minCut) end = i + sp + 1;
+    }
+    chunks.push(text.slice(i, end));
+    i = end;
+  }
+  return chunks;
+}
+
+/** 읽기 전용 텍스트에서 마스크(****)를 노란색으로 강조해 렌더 */
+function renderWithMasks(s: string) {
+  const parts = s.split(MASK);
+  return parts.map((part, i) => (
+    <span key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <span className="rounded bg-yellow-200 px-0.5 font-bold text-yellow-900">{MASK}</span>
+      )}
+    </span>
+  ));
+}
+
+/**
+ * Drive 파일 API(/api/drive/file/[fileId])로 받은 이미지를 클라이언트 canvas 로 축소해
+ * object URL 로 돌려준다. 큰 스캔본을 풀해상도로 들고 있으면 렌더러 메모리가 폭증해 탭이 죽는다.
+ * (이 파일 API 는 세션 쿠키 인증이라 next/image 최적화를 못 쓴다 → 직접 축소한다.)
+ */
+async function loadDownscaledImageUrl(fileId: string, maxEdge = 1500): Promise<string> {
+  const res = await fetch(`/api/drive/file/${fileId}`);
+  if (!res.ok) throw new Error("이미지 불러오기 실패");
+  const blob = await res.blob();
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = longest > maxEdge ? maxEdge / longest : 1;
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return URL.createObjectURL(blob);
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close(); // 원본 디코드 비트맵 즉시 해제(메모리 절약)
+    const reduced = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.8),
+    );
+    return URL.createObjectURL(reduced ?? blob);
+  } catch {
+    return URL.createObjectURL(blob); // 축소 실패 시 원본이라도 표시
+  }
+}
+
 function friendlyError(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   if (
@@ -84,6 +161,10 @@ export default function GradePage({
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [gradingMode, setGradingMode] = useState<GradingMode>("text-only");
   const [effectiveGradingMode, setEffectiveGradingMode] = useState<GradingMode>("text-only");
+  const [pageObjectUrl, setPageObjectUrl] = useState("");
+  const [pageLoading, setPageLoading] = useState(false);
+  const [editingChunkIndex, setEditingChunkIndex] = useState<number | null>(null);
+  const [chunkDraft, setChunkDraft] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -178,6 +259,61 @@ export default function GradePage({
 
   const selectedPage = selectedPageRefs[selectedPageIndex] ?? selectedPageRefs[0];
 
+  // 교사 확정 답안(OCR/입력 텍스트)을 인라인 편집용 짧은 조각으로 분할 + 마스크(****) 개수
+  const answerChunks = useMemo(() => chunkText(answerText, EDIT_CHUNK), [answerText]);
+  const maskCount = useMemo(() => answerText.split(MASK).length - 1, [answerText]);
+
+  // 선택 페이지가 바뀌면 축소 이미지를 새로 로드하고, 이전 object URL 은 해제한다.
+  useEffect(() => {
+    let revoked = false;
+    let createdUrl = "";
+    const fileId = selectedPage?.fileId;
+    if (!fileId) {
+      setPageObjectUrl("");
+      setPageLoading(false);
+      return;
+    }
+    setPageLoading(true);
+    (async () => {
+      try {
+        const url = await loadDownscaledImageUrl(fileId);
+        if (revoked) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setPageObjectUrl(url);
+      } catch {
+        if (!revoked) setPageObjectUrl("");
+      } finally {
+        if (!revoked) setPageLoading(false);
+      }
+    })();
+    return () => {
+      revoked = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPage?.fileId]);
+
+  function startChunkEdit(i: number) {
+    setEditingChunkIndex(i);
+    setChunkDraft(answerChunks[i] ?? "");
+  }
+  function cancelChunkEdit() {
+    setEditingChunkIndex(null);
+    setChunkDraft("");
+  }
+  function applyChunkEdit() {
+    if (editingChunkIndex === null) return;
+    const next = answerChunks.slice();
+    if (editingChunkIndex >= next.length) next.push(chunkDraft);
+    else next[editingChunkIndex] = chunkDraft;
+    setAnswerText(next.join(""));
+    setEditingChunkIndex(null);
+    setChunkDraft("");
+  }
+
   async function loadSavedStudentWork(folderId: string) {
     if (!folderId) return;
     setLoadingStudentWork(true);
@@ -249,6 +385,8 @@ export default function GradePage({
     setFeedback("");
     setMessage(null);
     setError(null);
+    setEditingChunkIndex(null);
+    setChunkDraft("");
     void loadSavedStudentWork(folderId);
   }
 
@@ -392,6 +530,8 @@ export default function GradePage({
       setOcrDraft(draft);
       setAnswerText(draft.text);
       setVisualElements(draft.visualElements);
+      setEditingChunkIndex(null);
+      setChunkDraft("");
       const nextRecommendedMode = recommendGradingMode(
         draft.visualElements.map((item) => item.kind),
       );
@@ -657,15 +797,23 @@ export default function GradePage({
             </div>
             {selectedPage ? (
               <div className="mt-4 h-[48vh] min-h-[420px] overflow-auto rounded-md border border-slate-200 bg-slate-100 p-4">
-                <div className="mx-auto" style={{ width: `${pageZoom}%`, minWidth: "460px" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/drive/file/${selectedPage.fileId}`}
-                    alt={selectedPage.name}
-                    className="w-full rounded border border-slate-300 bg-white shadow-sm"
-                  />
-                  <p className="mt-2 text-xs text-slate-500">{selectedPage.name}</p>
-                </div>
+                {pageLoading ? (
+                  <p className="py-16 text-center text-sm text-slate-500">이미지 불러오는 중…</p>
+                ) : pageObjectUrl ? (
+                  <div className="mx-auto" style={{ width: `${pageZoom}%`, minWidth: "460px" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pageObjectUrl}
+                      alt={selectedPage.name}
+                      className="w-full rounded border border-slate-300 bg-white shadow-sm"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">{selectedPage.name}</p>
+                  </div>
+                ) : (
+                  <p className="py-16 text-center text-sm text-slate-500">
+                    이미지를 불러오지 못했습니다. Google Drive 연결을 확인하세요.
+                  </p>
+                )}
               </div>
             ) : (
               <p className="mt-4 rounded-md bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
@@ -688,12 +836,87 @@ export default function GradePage({
                 </span>
               )}
             </div>
-            <textarea
-              value={answerText}
-              onChange={(event) => setAnswerText(event.target.value)}
-              rows={10}
-              className="mt-4 h-[32vh] min-h-[280px] w-full resize-y overflow-auto rounded-md border border-slate-300 px-3 py-2 text-sm leading-6"
-            />
+            <div className="mt-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {maskCount > 0 && (
+                    <span className="rounded bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                      불명확 {maskCount}곳 (****)
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    {answerText.length.toLocaleString()}자
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400">고칠 부분을 클릭해 수정</span>
+              </div>
+              <p className="mb-2 text-xs text-slate-500">
+                긴 답안 전체를 한 칸에 넣지 않고, 고칠 부분만 클릭해 고칩니다(긴 한글을 한
+                편집창에 넣으면 탭이 죽는 문제 예방). 노란색 ****는 OCR이 불명확하다고 본 부분입니다.
+              </p>
+              <div className="h-[32vh] min-h-[280px] space-y-0.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2 text-sm leading-6">
+                {answerChunks.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingChunkIndex(0);
+                      setChunkDraft("");
+                    }}
+                    className="w-full rounded px-2 py-2 text-left text-sm text-slate-400 hover:bg-amber-50"
+                  >
+                    (텍스트 없음 — 클릭해 입력)
+                  </button>
+                ) : (
+                  answerChunks.map((chunk, i) =>
+                    editingChunkIndex === i ? (
+                      <div key={i} className="rounded-md border border-brand-500 bg-white p-2">
+                        <textarea
+                          autoFocus
+                          value={chunkDraft}
+                          onChange={(event) => setChunkDraft(event.target.value)}
+                          rows={Math.min(8, Math.max(2, chunkDraft.split("\n").length + 1))}
+                          spellCheck={false}
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          className="w-full resize-y rounded border border-slate-300 p-2 text-sm leading-relaxed"
+                        />
+                        <div className="mt-1 flex items-center justify-end gap-2">
+                          <button
+                            onClick={cancelChunkEdit}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                          >
+                            취소
+                          </button>
+                          <button
+                            onClick={applyChunkEdit}
+                            className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white hover:bg-brand-700"
+                          >
+                            적용
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        key={i}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => startChunkEdit(i)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            startChunkEdit(i);
+                          }
+                        }}
+                        title="클릭하여 이 부분 수정"
+                        className="cursor-text whitespace-pre-wrap break-words rounded px-2 py-1 leading-relaxed text-slate-700 hover:bg-amber-50"
+                      >
+                        {renderWithMasks(chunk)}
+                      </div>
+                    ),
+                  )
+                )}
+              </div>
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => void runAiInterpretation()}
