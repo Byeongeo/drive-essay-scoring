@@ -69,7 +69,12 @@ export default function UploadPage({
     const classifications = pages.map((page, index) => ({
       pageIndex: index,
       pageNumber: page.pageNumber,
-      header: starts[index] ? headers[index] ?? { hasHeader: true } : { hasHeader: false },
+      // "새 학생 시작"(starts[index])은 교사의 명시적 결정이므로, AI가 그 페이지를
+      // 머리글 없음(hasHeader:false)으로 분류했더라도 반드시 새 학생으로 분리한다.
+      // (이전엔 headers[index]를 그대로 써서, 체크해도 hasHeader:false면 분리되지 않는 버그가 있었음)
+      header: starts[index]
+        ? { ...(headers[index] ?? {}), hasHeader: true }
+        : { hasHeader: false },
     }));
     return deriveStudentGroups(classifications);
   }, [pages, headers, starts]);
