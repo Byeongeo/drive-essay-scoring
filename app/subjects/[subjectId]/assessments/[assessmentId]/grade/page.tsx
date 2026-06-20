@@ -985,6 +985,15 @@ export default function GradePage({
                 {running ? "채점 중" : "AI 채점 실행"}
               </button>
             </div>
+            {(error || message) && (
+              <p
+                className={`mt-3 whitespace-pre-wrap rounded-md px-3 py-2 text-sm ${
+                  error ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
+                }`}
+              >
+                {error || message}
+              </p>
+            )}
             <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block text-sm font-medium text-slate-700">채점 방식</label>
               <select
