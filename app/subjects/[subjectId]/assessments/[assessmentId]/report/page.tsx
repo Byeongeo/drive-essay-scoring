@@ -71,8 +71,12 @@ export default function ReportPage({
       try {
         const driveClasses = await loadDriveReport(assessment.folderId);
         if (!active) return;
-        setClasses(driveClasses);
-        setMessage("Drive에 저장된 최종 채점 결과를 반영했습니다.");
+        // Drive에서 학생이 비어 보이면(옛 업로드로 데이터가 다른 폴더에 있는 경우) 로컬 데이터를
+        // 빈 값으로 덮어쓰지 않는다 — 덮어쓰면 리포트가 "학생 0"이 된다.
+        if (driveClasses.length > 0) {
+          setClasses(driveClasses);
+          setMessage("Drive에 저장된 최종 채점 결과를 반영했습니다.");
+        }
       } catch {
         if (active) {
           setMessage("Drive 리포트를 불러오지 못해 브라우저 임시 데이터를 표시합니다.");
