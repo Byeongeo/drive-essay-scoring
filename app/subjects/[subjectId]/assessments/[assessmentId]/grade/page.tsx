@@ -202,21 +202,25 @@ export default function GradePage({
         }
         const driveClasses = await listDriveClasses(assessment.folderId);
         if (!active) return;
-        setClassIndexes(driveClasses);
-        const latestStore = loadStore();
-        saveStore({
-          ...latestStore,
-          classIndexes: {
-            ...latestStore.classIndexes,
-            [params.assessmentId]: driveClasses,
-          },
-        });
-        const firstDriveStudent = driveClasses.flatMap((item) => item.students)[0];
-        if (firstDriveStudent) {
-          setSelectedStudentFolderId(firstDriveStudent.folderId);
-          setSelectedPageRefs(firstDriveStudent.pageRefs ?? []);
-          setSelectedPageIndex(0);
-          void loadSavedStudentWork(firstDriveStudent.folderId);
+        // Drive에서 반이 비어 보이면(예: 옛 업로드로 데이터가 다른 폴더에 있는 경우) 로컬에 있던
+        // 학생 목록을 빈 값으로 덮어쓰지 않는다 — 덮어쓰면 채점화면 학생 목록이 사라진다.
+        if (driveClasses.length > 0) {
+          setClassIndexes(driveClasses);
+          const latestStore = loadStore();
+          saveStore({
+            ...latestStore,
+            classIndexes: {
+              ...latestStore.classIndexes,
+              [params.assessmentId]: driveClasses,
+            },
+          });
+          const firstDriveStudent = driveClasses.flatMap((item) => item.students)[0];
+          if (firstDriveStudent) {
+            setSelectedStudentFolderId(firstDriveStudent.folderId);
+            setSelectedPageRefs(firstDriveStudent.pageRefs ?? []);
+            setSelectedPageIndex(0);
+            void loadSavedStudentWork(firstDriveStudent.folderId);
+          }
         }
       } catch {
         // Keep local class index if Drive is unavailable.

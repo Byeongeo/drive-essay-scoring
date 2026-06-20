@@ -146,6 +146,27 @@ export async function trashDriveFile(
   );
 }
 
+/**
+ * 폴더(와 그 하위 전부)를 휴지통으로 보낸다. drive.file 스코프에서는 내용이 있는 폴더를 통째로
+ * 휴지통에 보내면 자식 권한 검사로 실패(appNotAuthorizedToChild)하므로, 하위부터 하나씩(앱이 만든
+ * 파일은 개별 휴지통 가능) 비운 뒤 폴더를 보낸다.
+ */
+async function trashFolderTreeInDrive(accessToken: string, folderId: string): Promise<void> {
+  const children = await listChildren(accessToken, folderId);
+  for (const child of children) {
+    if (child.mimeType === folderMimeType) {
+      await trashFolderTreeInDrive(accessToken, child.id);
+    } else {
+      await trashDriveFile(accessToken, child.id);
+    }
+  }
+  try {
+    await trashDriveFile(accessToken, folderId);
+  } catch {
+    // 자식을 모두 비웠으면 폴더 자체 휴지통은 best-effort(실패해도 빈 폴더가 남는 정도라 무해).
+  }
+}
+
 export async function uploadJsonFile(
   accessToken: string,
   name: string,
@@ -435,7 +456,7 @@ export async function deleteSubjectInDrive(
   const appRoot = await ensureAppRoot(accessToken);
   const subject = appRoot.index.subjects.find((item) => item.id === subjectId);
   if (subject?.folderId) {
-    await trashDriveFile(accessToken, subject.folderId);
+    await trashFolderTreeInDrive(accessToken, subject.folderId);
   }
   const nextIndex: AppIndex = {
     ...appRoot.index,
@@ -463,7 +484,7 @@ export async function deleteAssessmentInDrive(
     (item) => item.id === assessmentId,
   );
   if (assessment?.folderId) {
-    await trashDriveFile(accessToken, assessment.folderId);
+    await trashFolderTreeInDrive(accessToken, assessment.folderId);
   }
   const nextSubject: Subject = {
     ...subjectJson.data,

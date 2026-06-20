@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { createSubjectInDrive, deleteSubjectInDrive, ensureAppRoot } from "@/lib/drive";
 
 export const runtime = "nodejs";
+export const maxDuration = 300; // 삭제는 하위 파일을 하나씩 휴지통에 보내므로 길어질 수 있다.
 
 async function getAccessToken() {
   const session = await getServerSession(authOptions);

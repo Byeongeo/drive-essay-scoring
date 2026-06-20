@@ -12,6 +12,7 @@ import {
 import type { Assessment, Rubric, ScoringExample } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300; // 삭제는 하위 파일을 하나씩 휴지통에 보내므로 길어질 수 있다.
 
 async function getAccessToken() {
   const session = await getServerSession(authOptions);
