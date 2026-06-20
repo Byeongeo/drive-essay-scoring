@@ -1,4 +1,3 @@
-import GradingEditorPreview from "@/components/GradingEditorPreview";
 import SetupStatus from "@/components/SetupStatus";
 import WorkflowSteps from "@/components/WorkflowSteps";
 import Link from "next/link";
@@ -32,9 +31,8 @@ export default function HomePage() {
           >
             설정 점검
           </Link>
-          <WorkflowSteps />
         </div>
-        <GradingEditorPreview />
+        <WorkflowSteps />
       </div>
     </main>
   );
