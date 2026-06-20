@@ -156,6 +156,7 @@ export default function GradePage({
   const [ocrDraft, setOcrDraft] = useState<OcrDraft | null>(null);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
+  const [crossCheck, setCrossCheck] = useState(false);
   const [savingOcr, setSavingOcr] = useState(false);
   const [loadingStudentWork, setLoadingStudentWork] = useState(false);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
@@ -526,6 +527,7 @@ export default function GradePage({
       const draft = await interpretStudentFromDrive({
         studentFolderId: selectedStudentFolderId,
         pageRefs: selectedPageRefs,
+        crossCheck,
       });
       setOcrDraft(draft);
       setAnswerText(draft.text);
@@ -932,6 +934,15 @@ export default function GradePage({
               >
                 확인한 답안 저장
               </button>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600" title="2개의 AI로 두 번 읽어 서로 다르게 읽은 불확실한 글자를 ****로 표시합니다. 악필에 권장, 시간·비용 약 2배.">
+                <input
+                  type="checkbox"
+                  checked={crossCheck}
+                  onChange={(e) => setCrossCheck(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                손글씨 교차검증 (불확실한 글자 **** 표시 · 약 2배)
+              </label>
             </div>
           </div>
 
