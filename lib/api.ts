@@ -287,6 +287,7 @@ export async function deleteStudentWorkFromDrive(body: {
 export function interpretStudentFromDrive(body: {
   studentFolderId: string;
   pageRefs: Array<{ fileId: string; name: string; mimeType?: string }>;
+  crossCheck?: boolean;
 }): Promise<OcrDraft> {
   return postJson<OcrDraft>("/api/drive/interpret-student", body);
 }

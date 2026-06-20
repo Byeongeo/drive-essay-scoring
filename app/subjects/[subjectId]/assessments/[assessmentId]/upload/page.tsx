@@ -58,7 +58,7 @@ export default function UploadPage({
   const [message, setMessage] = useState<string | null>(null);
   const [classGrade, setClassGrade] = useState("");
   const [classNo, setClassNo] = useState("");
-  const [autoOcr, setAutoOcr] = useState(false);
+  const [crossCheck, setCrossCheck] = useState(false);
   const [savingDrive, setSavingDrive] = useState(false);
   const [saveProgress, setSaveProgress] = useState("");
   const [saveStates, setSaveStates] = useState<Record<number, SaveState>>({});
@@ -184,12 +184,15 @@ export default function UploadPage({
         if (result.classIndex) latestClassIndex = result.classIndex;
         setSaveStates((prev) => ({ ...prev, [groupIndex]: "saved" }));
 
-        if (autoOcr && result.student?.folderId) {
+        if (result.student?.folderId) {
           try {
-            setSaveProgress(`학생 ${groupIndex + 1}/${preparedGroups.length} OCR 해석 중`);
+            setSaveProgress(
+              `학생 ${groupIndex + 1}/${preparedGroups.length} OCR 해석 중${crossCheck ? " (교차검증)" : ""}`,
+            );
             const draft = await interpretStudentFromDrive({
               studentFolderId: result.student.folderId,
               pageRefs: result.student.pageRefs ?? [],
+              crossCheck,
             });
             await saveStudentWorkToDrive({
               studentFolderId: result.student.folderId,
@@ -283,11 +286,9 @@ export default function UploadPage({
       setMessage(
         failedCount
           ? "일부 학생 저장에 실패했습니다. 실패 학생만 다시 저장할 수 있습니다."
-          : autoOcr
-            ? ocrFailedCount
-              ? `Drive 저장은 끝났지만 ${ocrFailedCount}명은 OCR 해석에 실패했습니다. 채점 화면에서 개별로 다시 실행하세요.`
-              : "Drive 저장과 AI OCR/해석까지 모두 끝냈습니다. 채점 화면에서 바로 확인·채점하세요."
-            : "Drive에 반 폴더, 학생별 폴더, 페이지 이미지, class-index.json을 저장했습니다.",
+          : ocrFailedCount
+            ? `Drive 저장은 끝났지만 ${ocrFailedCount}명은 OCR 해석에 실패했습니다. 채점 화면에서 개별로 다시 실행하세요.`
+            : "Drive 저장과 AI OCR/해석까지 모두 끝냈습니다. 채점 화면에서 바로 확인·채점하세요.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Drive 저장 실패");
@@ -401,14 +402,23 @@ export default function UploadPage({
                 </button>
               </div>
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+            <p className="mt-3 text-xs text-slate-500">
+              저장하면 학생별 AI OCR/해석이 함께 실행됩니다(학생 수가 많으면 시간이 더 걸립니다).
+            </p>
+            <label className="mt-2 flex items-start gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
-                checked={autoOcr}
-                onChange={(event) => setAutoOcr(event.target.checked)}
-                className="h-4 w-4"
+                checked={crossCheck}
+                onChange={(event) => setCrossCheck(event.target.checked)}
+                className="mt-0.5 h-4 w-4"
               />
-              저장하면서 AI OCR/해석도 함께 실행 (학생 수가 많으면 시간이 더 걸립니다)
+              <span>
+                손글씨 교차검증 — 2개의 AI로 두 번 읽어 <b>서로 다르게 읽은 불확실한 글자</b>를{" "}
+                <span className="rounded bg-yellow-100 px-1 font-mono text-xs">****</span> 로 표시합니다.
+                <span className="mt-0.5 block text-xs text-slate-400">
+                  악필 손글씨에 권장 · 시간·비용 약 2배. 타이핑(워드)으로 받은 답안은 꺼두세요(1회로 충분).
+                </span>
+              </span>
             </label>
           </div>
 

@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as {
       studentFolderId?: string;
       pageRefs?: DriveRef[];
+      crossCheck?: boolean;
     };
 
     if (!body.studentFolderId || !body.pageRefs?.length) {
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
       }),
     );
 
-    const draft = await interpretStudentAnswer(pages);
+    const draft = await interpretStudentAnswer(pages, { crossCheck: body.crossCheck });
     await writeJsonChild(accessToken, body.studentFolderId, "ocr-draft.json", draft);
 
     return NextResponse.json(draft);

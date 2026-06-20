@@ -9,6 +9,9 @@ import type {
 } from "./types";
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+// 손글씨 교차검증(2회 OCR)용 대조 모델 — 정확한 기본 모델과 '같게 읽은 글자=명확 /
+// 다르게 읽은 글자=불확실(****)'을 가리기 위한 두 번째 의견. 저비용 모델을 쓴다.
+const CROSS_CHECK_MODEL = process.env.GEMINI_CROSSCHECK_MODEL || "gemini-3.1-flash-lite";
 
 let client: GoogleGenAI | null = null;
 
@@ -219,6 +222,68 @@ const ocrSchema = {
   required: ["text", "maskedTokens", "visualElements"],
 };
 
+/**
+ * 손글씨 교차검증용 — 두 OCR 결과 텍스트를 어절 단위로 비교해, 서로 '다르게 읽은' 어절만
+ * **** 로 가린 primary(정확한 모델) 기준 텍스트를 만든다. 둘 다 같게 읽은 어절 = 명확,
+ * 다르게 읽은 어절 = 불확실. 괄호·문장부호·공백 차이는 무시해 노이즈를 억제한다.
+ */
+function crossCheckMaskText(primary: string, secondary: string): string {
+  const PUNCT = /[\[\]【】〔〕(){}<>.,·、…"'`“”‘’:;!?~\-—_/\\|]/g;
+  const strip = (w: string) => w.replace(PUNCT, "");
+  const isWord = (s: string) => s.length > 0 && !/^\s+$/.test(s);
+
+  const segs = primary.split(/(\s+)/); // 단어/공백(개행 포함) 세그먼트 — 원문 구조 보존
+  const pWords: string[] = [];
+  segs.forEach((s) => {
+    if (isWord(s)) pWords.push(s);
+  });
+  const sWords = secondary.trim().split(/\s+/).filter(Boolean);
+
+  const a = pWords.map(strip);
+  const b = sWords.map(strip);
+  const n = a.length;
+  const m = b.length;
+  // 어절 수가 비정상적으로 많으면(메모리 보호) 교차검증 마스킹을 건너뛰고 정확한 결과를 그대로 쓴다.
+  if (n === 0 || (n + 1) * (m + 1) > 4_000_000) return primary;
+
+  const dp = new Int32Array((n + 1) * (m + 1));
+  const at = (i: number, j: number) => i * (m + 1) + j;
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[at(i, j)] =
+        a[i] && a[i] === b[j]
+          ? dp[at(i + 1, j + 1)] + 1
+          : Math.max(dp[at(i + 1, j)], dp[at(i, j + 1)]);
+    }
+  }
+  const agreed = new Array<boolean>(n).fill(false);
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] && a[i] === b[j]) {
+      agreed[i] = true;
+      i++;
+      j++;
+    } else if (dp[at(i + 1, j)] >= dp[at(i, j + 1)]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  // 순수 문장부호/기호(strip 후 빈 문자열)는 항상 보존(노이즈로 ****되지 않게).
+  for (let k = 0; k < n; k++) if (a[k] === "") agreed[k] = true;
+
+  let wi = 0;
+  const rebuilt = segs
+    .map((s) => {
+      if (!isWord(s)) return s;
+      return agreed[wi++] ? s : "****";
+    })
+    .join("");
+  // 공백으로만 이어진 연속 **** 는 하나로(개행은 보존).
+  return rebuilt.replace(/\*\*\*\*(?:[ \t]+\*\*\*\*)+/g, "****");
+}
+
 export async function interpretStudentAnswer(
   pages: Array<{
     base64: string;
@@ -226,6 +291,7 @@ export async function interpretStudentAnswer(
     fileId: string;
     name: string;
   }>,
+  opts: { crossCheck?: boolean } = {},
 ): Promise<OcrDraft> {
   const ai = getClient();
   const parts: Array<Record<string, unknown>> = [
@@ -265,25 +331,41 @@ export async function interpretStudentAnswer(
     parts.push(inlineImage(page.base64, page.mimeType));
   }
 
-  const res = await withRetry(() =>
-    ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ role: "user", parts: parts as never }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: ocrSchema,
-        // ⚠️ gemini-3.5-flash 는 "사고(thinking)" 모델이라, 사고 토큰이 출력 예산을 다 써버리면
-        //    정작 JSON 출력이 잘려(finishReason=MAX_TOKENS) 파싱 실패 → text 0자가 된다.
-        //    (8192 한도일 때 사고가 ~7000~7900 토큰을 먹어 답안이 조금만 길어도 0자·매우 느림 — 실측 확인.)
-        //    OCR은 추론이 필요 없는 '받아쓰기'이므로 사고를 끄고(=속도↑), 여러 페이지 긴 답안도
-        //    담기도록 출력 한도를 넉넉히 둔다. (런어웨이는 16384 상한으로 여전히 차단.)
-        thinkingConfig: { thinkingBudget: 0 },
-        maxOutputTokens: 16384,
-      },
-    }),
-  );
+  // gemini-3.5-flash 는 "사고(thinking)" 모델이라 사고 토큰이 출력 예산을 다 쓰면 JSON 이 잘려
+  // (MAX_TOKENS) text 0자가 된다. OCR은 받아쓰기이므로 사고를 끄고(속도↑) 출력 한도를 넉넉히 둔다.
+  // flash-lite 등 일부 모델은 thinkingConfig 에서 400을 낼 수 있어, 실패 시 한 번 더(끄고) 시도한다.
+  async function generateOcr(model: string): Promise<OcrDraft> {
+    const variants: Array<Record<string, unknown>> = [
+      { responseMimeType: "application/json", responseSchema: ocrSchema, thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 16384 },
+      { responseMimeType: "application/json", responseSchema: ocrSchema, maxOutputTokens: 16384 },
+    ];
+    let lastErr: unknown;
+    for (const config of variants) {
+      try {
+        const res = await withRetry(() =>
+          ai.models.generateContent({ model, contents: [{ role: "user", parts: parts as never }], config: config as never }),
+        );
+        return parseJson<OcrDraft>(res.text);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr;
+  }
 
-  return parseJson<OcrDraft>(res.text);
+  if (!opts.crossCheck) {
+    return generateOcr(DEFAULT_MODEL);
+  }
+
+  // 손글씨 교차검증: 정확한 모델(Flash) + 저비용 모델(Flash-Lite)로 각각 OCR(병렬) 후,
+  // 두 결과가 '다르게 읽은 어절'만 **** 로 가린다(같게 읽음=명확). 확정 텍스트·수식 설명
+  // (visualElements)·maskedTokens 는 정확한 Flash 결과 기준. 병렬이라 시간은 ≈1배, 비용만 추가.
+  const [primary, secondary] = await Promise.all([
+    generateOcr(DEFAULT_MODEL),
+    generateOcr(CROSS_CHECK_MODEL).catch(() => null),
+  ]);
+  if (!secondary) return primary; // 대조 모델 실패 시 1회 결과 그대로 사용
+  return { ...primary, text: crossCheckMaskText(primary.text, secondary.text) };
 }
 
 const gradingSchema = {
