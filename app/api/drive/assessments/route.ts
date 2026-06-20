@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import {
+  deleteAssessmentInDrive,
   ensureAppRoot,
   listAssessmentsInDrive,
   readAssessmentBundle,
@@ -111,6 +112,27 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "회차 수정 저장 실패";
+    const status = message.includes("Google Drive 연결") ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const accessToken = await getAccessToken();
+    const { searchParams } = new URL(req.url);
+    const subjectId = searchParams.get("subjectId");
+    const assessmentId = searchParams.get("assessmentId");
+    if (!subjectId || !assessmentId) {
+      return NextResponse.json(
+        { error: "subjectId와 assessmentId가 필요합니다." },
+        { status: 400 },
+      );
+    }
+    await deleteAssessmentInDrive(accessToken, subjectId, assessmentId);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "회차 삭제 실패";
     const status = message.includes("Google Drive 연결") ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }

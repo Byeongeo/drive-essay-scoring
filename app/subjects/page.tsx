@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
-import { createDriveSubject, listDriveSubjects } from "@/lib/api";
+import { createDriveSubject, deleteDriveSubject, listDriveSubjects } from "@/lib/api";
 import { loadStore, makeId, saveStore, type DraftSubject } from "@/lib/client-store";
 
 export default function SubjectsPage() {
   const [subjects, setSubjects] = useState<DraftSubject[]>([]);
   const [name, setName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -66,6 +67,49 @@ export default function SubjectsPage() {
     setName("");
   }
 
+  async function handleDeleteSubject(subject: DraftSubject) {
+    const ok = window.confirm(
+      `'${subject.name}' 과목을 삭제할까요?\n\n이 과목의 모든 회차·반·학생·채점 데이터가 함께 삭제됩니다.\n(구글 드라이브 휴지통으로 이동 — 30일 내 드라이브에서 복원 가능)`,
+    );
+    if (!ok) return;
+    setDeletingId(subject.id);
+    setMessage(null);
+    if (subject.folderId) {
+      try {
+        await deleteDriveSubject(subject.id);
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "과목 삭제 실패");
+        setDeletingId(null);
+        return;
+      }
+    }
+    // 로컬 스토어에서도 과목 + 그 과목의 회차/루브릭/예시/반 인덱스를 정리한다.
+    const store = loadStore();
+    const removedAssessmentIds = store.assessments
+      .filter((item) => item.subjectId === subject.id)
+      .map((item) => item.id);
+    const nextRubrics = { ...store.rubrics };
+    const nextExamples = { ...store.examples };
+    const nextClassIndexes = { ...store.classIndexes };
+    for (const aid of removedAssessmentIds) {
+      delete nextRubrics[aid];
+      delete nextExamples[aid];
+      delete nextClassIndexes[aid];
+    }
+    const nextSubjects = store.subjects.filter((item) => item.id !== subject.id);
+    saveStore({
+      ...store,
+      subjects: nextSubjects,
+      assessments: store.assessments.filter((item) => item.subjectId !== subject.id),
+      rubrics: nextRubrics,
+      examples: nextExamples,
+      classIndexes: nextClassIndexes,
+    });
+    setSubjects(nextSubjects);
+    setDeletingId(null);
+    setMessage("과목을 삭제했습니다.");
+  }
+
   return (
     <main className="mx-auto max-w-4xl px-5 py-8">
       <AppHeader title="과목" backHref="/" backLabel="처음 화면" />
@@ -100,14 +144,25 @@ export default function SubjectsPage() {
           </p>
         ) : (
           subjects.map((subject) => (
-            <Link
+            <div
               key={subject.id}
-              href={`/subjects/${subject.id}/assessments`}
-              className="rounded-lg border border-slate-200 bg-white p-5 hover:border-brand-500"
+              className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-5"
             >
-              <div className="font-semibold text-slate-950">{subject.name}</div>
-              <div className="mt-1 text-sm text-slate-500">평가 회차 관리</div>
-            </Link>
+              <Link
+                href={`/subjects/${subject.id}/assessments`}
+                className="min-w-0 flex-1 hover:opacity-80"
+              >
+                <div className="font-semibold text-slate-950">{subject.name}</div>
+                <div className="mt-1 text-sm text-slate-500">평가 회차 관리</div>
+              </Link>
+              <button
+                onClick={() => void handleDeleteSubject(subject)}
+                disabled={deletingId === subject.id}
+                className="shrink-0 rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                {deletingId === subject.id ? "삭제 중" : "삭제"}
+              </button>
+            </div>
           ))
         )}
       </section>

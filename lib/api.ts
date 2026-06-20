@@ -38,6 +38,21 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function delJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    let message = `요청 실패 (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return res.json() as Promise<T>;
+}
+
 async function patchJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: "PATCH",
@@ -148,6 +163,21 @@ export function updateDriveAssessment(body: {
   examples: ScoringExample[];
 }): Promise<{ ok: boolean }> {
   return patchJson<{ ok: boolean }>("/api/drive/assessments", body);
+}
+
+export function deleteDriveSubject(subjectId: string): Promise<{ ok: boolean }> {
+  return delJson<{ ok: boolean }>(
+    `/api/drive/subjects?subjectId=${encodeURIComponent(subjectId)}`,
+  );
+}
+
+export function deleteDriveAssessment(
+  subjectId: string,
+  assessmentId: string,
+): Promise<{ ok: boolean }> {
+  return delJson<{ ok: boolean }>(
+    `/api/drive/assessments?subjectId=${encodeURIComponent(subjectId)}&assessmentId=${encodeURIComponent(assessmentId)}`,
+  );
 }
 
 export function uploadAssessmentFiles(body: {

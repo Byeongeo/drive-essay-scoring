@@ -427,6 +427,53 @@ export async function listAssessmentsInDrive(
   return subjectJson?.data.assessments ?? [];
 }
 
+/** 과목 삭제 — 과목 폴더(그 안의 회차·반·학생·채점 전부)를 휴지통으로 보내고 app-index에서 제거 */
+export async function deleteSubjectInDrive(
+  accessToken: string,
+  subjectId: string,
+): Promise<void> {
+  const appRoot = await ensureAppRoot(accessToken);
+  const subject = appRoot.index.subjects.find((item) => item.id === subjectId);
+  if (subject?.folderId) {
+    await trashDriveFile(accessToken, subject.folderId);
+  }
+  const nextIndex: AppIndex = {
+    ...appRoot.index,
+    subjects: appRoot.index.subjects.filter((item) => item.id !== subjectId),
+  };
+  await updateJsonFile(accessToken, appRoot.indexFile.id, nextIndex);
+}
+
+/** 회차 삭제 — 회차 폴더(그 안의 반·학생·채점 전부)를 휴지통으로 보내고 subject.json에서 제거 */
+export async function deleteAssessmentInDrive(
+  accessToken: string,
+  subjectId: string,
+  assessmentId: string,
+): Promise<void> {
+  const appRoot = await ensureAppRoot(accessToken);
+  const subjectIndex = appRoot.index.subjects.find((item) => item.id === subjectId);
+  if (!subjectIndex) return;
+  const subjectJson = await readJsonChild<Subject>(
+    accessToken,
+    subjectIndex.folderId,
+    "subject.json",
+  );
+  if (!subjectJson) return;
+  const assessment = (subjectJson.data.assessments ?? []).find(
+    (item) => item.id === assessmentId,
+  );
+  if (assessment?.folderId) {
+    await trashDriveFile(accessToken, assessment.folderId);
+  }
+  const nextSubject: Subject = {
+    ...subjectJson.data,
+    assessments: (subjectJson.data.assessments ?? []).filter(
+      (item) => item.id !== assessmentId,
+    ),
+  };
+  await updateJsonFile(accessToken, subjectJson.file.id, nextSubject);
+}
+
 export async function readAssessmentBundle(
   accessToken: string,
   assessmentFolderId: string,

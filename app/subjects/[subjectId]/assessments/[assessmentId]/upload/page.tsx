@@ -7,6 +7,7 @@ import {
   createClassSession,
   interpretStudentFromDrive,
   saveClassStudent,
+  saveDriveAssessment,
   saveStudentWorkToDrive,
 } from "@/lib/api";
 import { loadStore, saveStore } from "@/lib/client-store";
@@ -118,6 +119,38 @@ export default function UploadPage({
     const assessment = store.assessments.find((item) => item.id === params.assessmentId);
     if (!assessment) throw new Error("회차 정보를 찾을 수 없습니다.");
 
+    // 회차가 아직 Drive에 등록되지 않았으면(= "새 회차 만들기"만 하고 회차 설정 저장을 건너뛴 경우)
+    // 먼저 Drive에 등록해 folderId 를 확보한다. 안 그러면 반 데이터가 미등록 폴더에 고아로 남고,
+    // 회차 목록(subject.json 기준)에서 회차가 사라진다.
+    let assessmentFolderId = assessment.folderId;
+    if (!assessmentFolderId) {
+      const saved = await saveDriveAssessment({
+        subjectId: params.subjectId,
+        assessment: {
+          id: assessment.id,
+          subjectId: params.subjectId,
+          title: assessment.title,
+          date: assessment.date,
+          systemPrompt: assessment.systemPrompt,
+          rubricSource: assessment.rubricSource,
+          gradingModel: assessment.gradingModel,
+          gradingMode: assessment.gradingMode,
+          sourceMaterials: assessment.sourceMaterials,
+          createdAt: assessment.createdAt,
+        },
+        rubric: store.rubrics[assessment.id] ?? { criteria: [] },
+        examples: store.examples[assessment.id] ?? [],
+      });
+      assessmentFolderId = saved.folderId;
+      const afterSave = loadStore();
+      saveStore({
+        ...afterSave,
+        assessments: afterSave.assessments.map((item) =>
+          item.id === assessment.id ? { ...item, folderId: saved.folderId } : item,
+        ),
+      });
+    }
+
     // 반 폴더 이름은 학년·반에서 자동 생성한다(예: "1학년 7반"). 별도 '반 이름' 입력은 없앴다.
     const grade = preparedGroups[0]?.header.grade ?? 0;
     const classNoValue = preparedGroups[0]?.header.classNo ?? 0;
@@ -132,7 +165,7 @@ export default function UploadPage({
 
     const session = await createClassSession({
       subjectId: params.subjectId,
-      assessmentFolderId: assessment.folderId,
+      assessmentFolderId,
       assessmentTitle: assessment.title,
       className,
       grade: preparedGroups[0]?.header.grade,

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
-import { createSubjectInDrive, ensureAppRoot } from "@/lib/drive";
+import { createSubjectInDrive, deleteSubjectInDrive, ensureAppRoot } from "@/lib/drive";
 
 export const runtime = "nodejs";
 
@@ -41,6 +41,22 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "과목 생성 실패";
+    const status = message.includes("Google Drive 연결") ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const accessToken = await getAccessToken();
+    const subjectId = new URL(req.url).searchParams.get("subjectId");
+    if (!subjectId) {
+      return NextResponse.json({ error: "subjectId가 필요합니다." }, { status: 400 });
+    }
+    await deleteSubjectInDrive(accessToken, subjectId);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "과목 삭제 실패";
     const status = message.includes("Google Drive 연결") ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
