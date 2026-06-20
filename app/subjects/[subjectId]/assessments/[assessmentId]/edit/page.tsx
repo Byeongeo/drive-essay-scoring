@@ -122,6 +122,7 @@ export default function AssessmentEditPage({
     } else {
       const saved = await saveDriveAssessment({
         subjectId: params.subjectId,
+        subjectName: loadStore().subjects.find((s) => s.id === params.subjectId)?.name,
         assessment: {
           id: assessment.id,
           subjectId: assessment.subjectId,

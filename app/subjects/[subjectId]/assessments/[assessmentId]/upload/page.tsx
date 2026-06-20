@@ -126,6 +126,7 @@ export default function UploadPage({
     if (!assessmentFolderId) {
       const saved = await saveDriveAssessment({
         subjectId: params.subjectId,
+        subjectName: store.subjects.find((s) => s.id === params.subjectId)?.name,
         assessment: {
           id: assessment.id,
           subjectId: params.subjectId,

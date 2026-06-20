@@ -377,6 +377,40 @@ export async function createSubjectInDrive(
   };
 }
 
+/** 과목을 Drive에 등록(이미 있으면 그대로 반환). createSubjectInDrive와 달리 '주어진 id'를 유지해,
+ *  로컬에만 있던 과목(또는 id 불일치)을 회차 저장 시점에 그 id 그대로 Drive에 올릴 수 있다. */
+export async function ensureSubjectInDrive(
+  accessToken: string,
+  input: { id: string; name: string },
+): Promise<{ subject: SubjectIndexItem; appRoot: AppRoot }> {
+  const appRoot = await ensureAppRoot(accessToken);
+  const existing = appRoot.index.subjects.find((item) => item.id === input.id);
+  if (existing) return { subject: existing, appRoot };
+
+  const folder = await createDriveFolder(accessToken, input.name, appRoot.root.id);
+  const subject: Subject = {
+    id: input.id,
+    name: input.name,
+    folderId: folder.id,
+    createdAt: Date.now(),
+    assessments: [],
+  };
+  await uploadJsonFile(accessToken, "subject.json", subject, folder.id);
+
+  const subjectIndexItem: SubjectIndexItem = {
+    id: subject.id,
+    name: subject.name,
+    folderId: subject.folderId,
+    createdAt: subject.createdAt,
+  };
+  const nextIndex: AppIndex = {
+    ...appRoot.index,
+    subjects: [subjectIndexItem, ...appRoot.index.subjects],
+  };
+  await updateJsonFile(accessToken, appRoot.indexFile.id, nextIndex);
+  return { subject: subjectIndexItem, appRoot: { ...appRoot, index: nextIndex } };
+}
+
 export async function saveAssessmentInDrive(
   accessToken: string,
   input: {

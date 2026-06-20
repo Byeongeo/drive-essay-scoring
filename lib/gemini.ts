@@ -10,8 +10,10 @@ import type {
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 // 손글씨 교차검증(2회 OCR)용 대조 모델 — 정확한 기본 모델과 '같게 읽은 글자=명확 /
-// 다르게 읽은 글자=불확실(****)'을 가리기 위한 두 번째 의견. 저비용 모델을 쓴다.
-const CROSS_CHECK_MODEL = process.env.GEMINI_CROSSCHECK_MODEL || "gemini-3.1-flash-lite";
+// 다르게 읽은 글자=불확실(****)'을 가린다. 저비용 flash-lite는 또렷한 글자도 자주 다르게 읽어
+// 오탐(불일치)이 너무 많아, 기본과 같은 gemini-3.5-flash 를 한 번 더 돌린다(샘플링 차이로 정말
+// 애매한 곳에서만 갈라짐 → 오탐↓). 필요시 GEMINI_CROSSCHECK_MODEL 로 교체.
+const CROSS_CHECK_MODEL = process.env.GEMINI_CROSSCHECK_MODEL || "gemini-3.5-flash";
 
 let client: GoogleGenAI | null = null;
 

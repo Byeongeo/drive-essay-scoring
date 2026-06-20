@@ -150,6 +150,7 @@ export async function readDriveAssessmentBundle(folderId: string): Promise<{
 
 export function saveDriveAssessment(body: {
   subjectId: string;
+  subjectName?: string;
   assessment: Omit<Assessment, "folderId" | "createdAt"> & { createdAt?: number };
   rubric: Rubric;
   examples: ScoringExample[];

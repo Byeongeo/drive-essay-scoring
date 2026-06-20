@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import {
   deleteAssessmentInDrive,
   ensureAppRoot,
+  ensureSubjectInDrive,
   listAssessmentsInDrive,
   readAssessmentBundle,
   saveAssessmentInDrive,
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
     const accessToken = await getAccessToken();
     const body = (await req.json()) as {
       subjectId?: string;
+      subjectName?: string;
       assessment?: Omit<Assessment, "folderId" | "createdAt"> & { createdAt?: number };
       rubric?: Rubric;
       examples?: ScoringExample[];
@@ -64,8 +66,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const appRoot = await ensureAppRoot(accessToken);
-    const subject = appRoot.index.subjects.find((item) => item.id === body.subjectId);
+    // 과목이 Drive에 아직 없으면(로컬에만 있던 경우) subjectName 으로 그 id 그대로 등록한다.
+    const subjectId = body.subjectId;
+    const subject = body.subjectName
+      ? (await ensureSubjectInDrive(accessToken, { id: subjectId, name: body.subjectName })).subject
+      : (await ensureAppRoot(accessToken)).index.subjects.find((item) => item.id === subjectId);
     if (!subject) {
       return NextResponse.json(
         { error: "Drive에서 과목을 찾을 수 없습니다." },
